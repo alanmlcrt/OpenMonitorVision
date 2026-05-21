@@ -24,6 +24,8 @@ backend/data/db/*.db-wal
 backend/data/models/
 backend/data/uploads/
 backend/data/exports/
+backend/data/ultralytics/
+backend/data/*.pid
 
 # ── Environment ──────────────────────────────────────────
 .env

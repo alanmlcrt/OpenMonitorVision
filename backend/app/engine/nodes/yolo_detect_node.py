@@ -14,12 +14,13 @@ class YoloDetectNode(BaseNode):
         model_path = config.get("model_path", "yolov8n.pt")
         confidence = float(config.get("confidence", 0.25))
         iou = float(config.get("iou", 0.7))
+        device = str(config.get("device", "auto"))
 
         if context.frame is None:
             return {}
 
         try:
-            model = inference_service.load_model(model_path)
+            model = inference_service.load_model(model_path, device=device)
             result = inference_service.run_inference(model, context.frame, confidence, iou)
             if result is None:
                 return {}

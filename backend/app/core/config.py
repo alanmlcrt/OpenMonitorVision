@@ -1,7 +1,11 @@
+import os
 from pydantic_settings import BaseSettings
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
+DATA_DIR = BASE_DIR / "data"
+
+os.environ.setdefault("YOLO_CONFIG_DIR", str(DATA_DIR / "ultralytics"))
 
 
 class Settings(BaseSettings):
@@ -9,10 +13,11 @@ class Settings(BaseSettings):
     version: str = "0.1.0"
     debug: bool = True
 
-    db_path: str = str(BASE_DIR / "data" / "db" / "omv.db")
-    models_dir: str = str(BASE_DIR / "data" / "models")
-    uploads_dir: str = str(BASE_DIR / "data" / "uploads")
-    exports_dir: str = str(BASE_DIR / "data" / "exports")
+    db_path: str = str(DATA_DIR / "db" / "omv.db")
+    models_dir: str = str(DATA_DIR / "models")
+    uploads_dir: str = str(DATA_DIR / "uploads")
+    exports_dir: str = str(DATA_DIR / "exports")
+    ultralytics_config_dir: str = str(DATA_DIR / "ultralytics")
 
     max_fps: int = 15
     frame_width: int = 1280

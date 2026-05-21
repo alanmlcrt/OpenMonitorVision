@@ -23,11 +23,12 @@ class SaveEventNode(BaseNode):
             return {}
 
         frame_path = None
-        if save_frame and context.annotated_frame is not None:
+        frame_to_save = context.annotated_frame if context.annotated_frame is not None else context.frame
+        if save_frame and frame_to_save is not None:
             os.makedirs(settings.exports_dir, exist_ok=True)
             fname = f"{datetime.utcnow().strftime('%Y%m%d_%H%M%S_%f')}.jpg"
             frame_path = os.path.join(settings.exports_dir, fname)
-            cv2.imwrite(frame_path, context.annotated_frame)
+            cv2.imwrite(frame_path, frame_to_save)
 
         async with AsyncSessionLocal() as db:
             for det in context.events:

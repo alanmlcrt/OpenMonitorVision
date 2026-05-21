@@ -1,3 +1,4 @@
+import asyncio
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.database import get_db
@@ -45,7 +46,7 @@ async def preview_source(source_id: int, db: AsyncSession = Depends(get_db)):
     src = await source_service.get_source(db, source_id)
     if not src:
         raise HTTPException(404, "Source not found")
-    img = source_service.get_source_preview(src)
+    img = await asyncio.to_thread(source_service.get_source_preview, src)
     if img is None:
         raise HTTPException(503, "Cannot capture frame")
     return {"frame": img}
@@ -56,4 +57,4 @@ async def test_source(source_id: int, db: AsyncSession = Depends(get_db)):
     src = await source_service.get_source(db, source_id)
     if not src:
         raise HTTPException(404, "Source not found")
-    return source_service.test_source(src)
+    return await asyncio.to_thread(source_service.test_source, src)

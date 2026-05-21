@@ -43,7 +43,7 @@ async def run_workflow(
     sorted_nodes = _sort_nodes(nodes, edges)
 
     for node_def in sorted_nodes:
-        node_type = node_def.get("type") or node_def.get("data", {}).get("type")
+        node_type = node_def.get("data", {}).get("type") or node_def.get("type")
         config = node_def.get("data", {}).get("config", node_def.get("config", {}))
         node = get_node(node_type)
         if node is None:

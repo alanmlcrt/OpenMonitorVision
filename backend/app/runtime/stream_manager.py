@@ -2,7 +2,7 @@ import asyncio
 import base64
 import time
 import cv2
-import numpy as np
+import os
 from typing import Any
 from app.engine.workflow_engine import run_workflow
 from app.runtime.ws_manager import ws_manager
@@ -21,7 +21,15 @@ def _open_capture(source) -> cv2.VideoCapture | None:
             idx = int(source.uri)
         except ValueError:
             idx = 0
-        cap = cv2.VideoCapture(idx)
+        cap = cv2.VideoCapture(idx, cv2.CAP_DSHOW)
+    elif source.type == "rtsp":
+        os.environ.setdefault(
+            "OPENCV_FFMPEG_CAPTURE_OPTIONS",
+            "rtsp_transport;tcp|stimeout;8000000|max_delay;5000000",
+        )
+        cap = cv2.VideoCapture(source.uri, cv2.CAP_FFMPEG)
+        cap.set(cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, 8000)
+        cap.set(cv2.CAP_PROP_READ_TIMEOUT_MSEC, 8000)
     else:
         cap = cv2.VideoCapture(source.uri)
     return cap if cap.isOpened() else None
@@ -47,8 +55,17 @@ async def _stream_loop(workflow_id: int, workflow, source) -> None:
 
             ret, frame = cap.read()
             if not ret:
-                logger.warning(f"Empty frame on workflow {workflow_id}, retrying...")
-                await asyncio.sleep(0.2)
+                logger.warning(f"Empty frame on workflow {workflow_id}, reopening source...")
+                cap.release()
+                await asyncio.sleep(0.5)
+                cap = _open_capture(source)
+                if cap is None:
+                    await ws_manager.broadcast(channel, {
+                        "type": "error",
+                        "message": "Cannot reopen source",
+                    })
+                    await asyncio.sleep(2.0)
+                    continue
                 continue
 
             frame = cv2.resize(frame, (settings.frame_width, settings.frame_height))

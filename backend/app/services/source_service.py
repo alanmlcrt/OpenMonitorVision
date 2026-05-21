@@ -2,12 +2,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 import cv2
 import base64
-import numpy as np
+import os
+import time
 from app.db.models import Source
 from app.schemas.source import SourceCreate, SourceUpdate
 from app.core.logging import get_logger
 
 logger = get_logger(__name__)
+
+RTSP_OPEN_TIMEOUT_MS = 8000
+RTSP_READ_TIMEOUT_MS = 8000
 
 
 async def list_sources(db: AsyncSession) -> list[Source]:
@@ -53,7 +57,15 @@ def _open_capture(source: Source) -> cv2.VideoCapture | None:
             idx = int(source.uri)
         except ValueError:
             idx = 0
-        cap = cv2.VideoCapture(idx)
+        cap = cv2.VideoCapture(idx, cv2.CAP_DSHOW)
+    elif source.type == "rtsp":
+        os.environ.setdefault(
+            "OPENCV_FFMPEG_CAPTURE_OPTIONS",
+            "rtsp_transport;tcp|stimeout;8000000|max_delay;5000000",
+        )
+        cap = cv2.VideoCapture(source.uri, cv2.CAP_FFMPEG)
+        cap.set(cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, RTSP_OPEN_TIMEOUT_MS)
+        cap.set(cv2.CAP_PROP_READ_TIMEOUT_MSEC, RTSP_READ_TIMEOUT_MS)
     else:
         cap = cv2.VideoCapture(source.uri)
     if not cap.isOpened():
@@ -61,13 +73,25 @@ def _open_capture(source: Source) -> cv2.VideoCapture | None:
     return cap
 
 
+def _read_frame(cap: cv2.VideoCapture, timeout_seconds: float = 8.0):
+    deadline = time.monotonic() + timeout_seconds
+    last_frame = None
+    while time.monotonic() < deadline:
+        ret, frame = cap.read()
+        if ret and frame is not None:
+            last_frame = frame
+            break
+        time.sleep(0.1)
+    return last_frame
+
+
 def get_source_preview(source: Source) -> str | None:
     cap = _open_capture(source)
     if cap is None:
         return None
     try:
-        ret, frame = cap.read()
-        if not ret or frame is None:
+        frame = _read_frame(cap)
+        if frame is None:
             return None
         frame = cv2.resize(frame, (640, 360))
         _, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 75])
@@ -84,11 +108,18 @@ def test_source(source: Source) -> dict:
     if cap is None:
         return {"ok": False, "error": "Cannot open source"}
     try:
-        ret, frame = cap.read()
-        if not ret:
+        frame = _read_frame(cap)
+        if frame is None:
             return {"ok": False, "error": "Cannot read frame"}
         h, w = frame.shape[:2]
-        return {"ok": True, "width": w, "height": h}
+        fps = cap.get(cv2.CAP_PROP_FPS) or None
+        return {
+            "ok": True,
+            "width": w,
+            "height": h,
+            "fps": round(float(fps), 2) if fps else None,
+            "backend": "opencv",
+        }
     except Exception as e:
         return {"ok": False, "error": str(e)}
     finally:

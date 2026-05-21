@@ -1,3 +1,4 @@
+import asyncio
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.database import get_db
@@ -49,7 +50,7 @@ async def start_workflow(workflow_id: int, db: AsyncSession = Depends(get_db)):
         raise HTTPException(404, "Workflow not found")
 
     source_node = next(
-        (n for n in (wf.nodes or []) if (n.get("type") or n.get("data", {}).get("type")) == "source"),
+        (n for n in (wf.nodes or []) if (n.get("data", {}).get("type") or n.get("type")) == "source"),
         None,
     )
     if not source_node:
@@ -62,6 +63,12 @@ async def start_workflow(workflow_id: int, db: AsyncSession = Depends(get_db)):
     source = await source_service.get_source(db, source_id)
     if not source:
         raise HTTPException(404, "Source not found")
+    if not source.enabled:
+        raise HTTPException(400, "Source is disabled")
+
+    source_test = await asyncio.to_thread(source_service.test_source, source)
+    if not source_test.get("ok"):
+        raise HTTPException(503, source_test.get("error", "Cannot open source"))
 
     await workflow_service.update_workflow(db, workflow_id, WorkflowUpdate(enabled=True))
     await stream_manager.start_stream(workflow_id, wf, source)

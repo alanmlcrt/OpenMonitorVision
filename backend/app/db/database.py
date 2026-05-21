@@ -3,7 +3,14 @@ from sqlalchemy.orm import DeclarativeBase
 from app.core.config import settings
 import os
 
-os.makedirs(os.path.dirname(settings.db_path), exist_ok=True)
+for directory in (
+    os.path.dirname(settings.db_path),
+    settings.models_dir,
+    settings.uploads_dir,
+    settings.exports_dir,
+    settings.ultralytics_config_dir,
+):
+    os.makedirs(directory, exist_ok=True)
 
 DATABASE_URL = f"sqlite+aiosqlite:///{settings.db_path}"
 
