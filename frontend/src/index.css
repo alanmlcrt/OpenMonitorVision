@@ -1,0 +1,95 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  *, *::before, *::after {
+    box-sizing: border-box;
+  }
+
+  html {
+    font-size: 13px;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  body {
+    background-color: #09090d;
+    color: #eeeef5;
+    font-family: 'Inter', system-ui, sans-serif;
+    font-size: 13px;
+    line-height: 1.5;
+  }
+
+  ::-webkit-scrollbar {
+    width: 5px;
+    height: 5px;
+  }
+  ::-webkit-scrollbar-track  { background: transparent; }
+  ::-webkit-scrollbar-thumb  { background: #252533; border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: #32324a; }
+
+  ::selection {
+    background: rgba(92, 107, 192, 0.3);
+    color: #eeeef5;
+  }
+}
+
+@layer components {
+  /* React Flow overrides */
+  .react-flow__background {
+    background-color: #0f0f15 !important;
+  }
+  .react-flow__controls {
+    background: #14141c !important;
+    border: 1px solid #252533 !important;
+    box-shadow: none !important;
+    border-radius: 6px !important;
+    overflow: hidden;
+  }
+  .react-flow__controls-button {
+    background: transparent !important;
+    border-bottom-color: #1e1e28 !important;
+    color: #8888a8 !important;
+    fill: #8888a8 !important;
+  }
+  .react-flow__controls-button:hover {
+    background: #1a1a24 !important;
+    fill: #eeeef5 !important;
+  }
+  .react-flow__minimap {
+    background: #14141c !important;
+    border: 1px solid #252533 !important;
+    border-radius: 6px !important;
+  }
+  .react-flow__edge-path {
+    stroke: #5c6bc0 !important;
+    stroke-width: 1.5 !important;
+  }
+  .react-flow__edge.selected .react-flow__edge-path {
+    stroke: #8b98e8 !important;
+  }
+  .react-flow__handle {
+    background: #5c6bc0 !important;
+    border: 2px solid #14141c !important;
+    width: 8px !important;
+    height: 8px !important;
+  }
+  .react-flow__node.selected > div {
+    box-shadow: 0 0 0 1px #5c6bc0 !important;
+  }
+
+  /* Recharts */
+  .recharts-cartesian-grid-horizontal line,
+  .recharts-cartesian-grid-vertical line {
+    stroke: #1e1e28 !important;
+  }
+  .recharts-tooltip-wrapper .recharts-default-tooltip {
+    background: #14141c !important;
+    border-color: #252533 !important;
+    border-radius: 6px !important;
+    font-size: 12px !important;
+  }
+}

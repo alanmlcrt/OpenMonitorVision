@@ -1,0 +1,52 @@
+# ── Python ──────────────────────────────────────────────
+venv/
+.venv/
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# ── FastAPI / runtime data ───────────────────────────────
+backend/data/db/*.db
+backend/data/db/*.db-shm
+backend/data/db/*.db-wal
+backend/data/models/
+backend/data/uploads/
+backend/data/exports/
+
+# ── Environment ──────────────────────────────────────────
+.env
+.env.*
+!.env.example
+
+# ── Node / frontend ──────────────────────────────────────
+node_modules/
+frontend/dist/
+frontend/.vite/
+
+# ── OS ───────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ── IDE ──────────────────────────────────────────────────
+.idea/
+*.iml
+.vscode/
+*.swp
+*.swo
+
+# ── Logs ─────────────────────────────────────────────────
+*.log
+logs/
