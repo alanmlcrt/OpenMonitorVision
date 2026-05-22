@@ -1,12 +1,10 @@
 import asyncio
 import base64
 import time
-import cv2
 import os
 from typing import Any
 from app.engine.workflow_engine import run_workflow
 from app.runtime.ws_manager import ws_manager
-from app.services.supervision_service import detections_to_json
 from app.core.config import settings
 from app.core.logging import get_logger
 
@@ -15,35 +13,95 @@ logger = get_logger(__name__)
 _running_tasks: dict[int, asyncio.Task] = {}
 
 
-def _open_capture(source) -> cv2.VideoCapture | None:
+def _cv2():
+    try:
+        import cv2
+    except ImportError as exc:
+        raise RuntimeError("OpenCV is required for stream runtime") from exc
+    return cv2
+
+
+def _open_capture(source, force_resolve: bool = False) -> Any | None:
+    cv2 = _cv2()
+    uri = source.uri
+
+    if source.type == "stream":
+        from app.services.stream_resolver import resolve
+        try:
+            uri = resolve(source.uri, force=force_resolve)
+        except RuntimeError as exc:
+            logger.error("stream_resolver: %s", exc)
+            return None
+
     if source.type == "webcam":
         try:
-            idx = int(source.uri)
+            idx = int(uri)
         except ValueError:
             idx = 0
         cap = cv2.VideoCapture(idx, cv2.CAP_DSHOW)
-    elif source.type == "rtsp":
+    elif source.type in ("rtsp", "stream"):
         os.environ.setdefault(
             "OPENCV_FFMPEG_CAPTURE_OPTIONS",
             "rtsp_transport;tcp|stimeout;8000000|max_delay;5000000",
         )
-        cap = cv2.VideoCapture(source.uri, cv2.CAP_FFMPEG)
+        cap = cv2.VideoCapture(uri, cv2.CAP_FFMPEG)
         cap.set(cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, 8000)
         cap.set(cv2.CAP_PROP_READ_TIMEOUT_MSEC, 8000)
+    elif source.type == "ip_camera":
+        if uri.startswith("rtsp://"):
+            os.environ.setdefault(
+                "OPENCV_FFMPEG_CAPTURE_OPTIONS",
+                "rtsp_transport;tcp|stimeout;8000000|max_delay;5000000",
+            )
+            cap = cv2.VideoCapture(uri, cv2.CAP_FFMPEG)
+            cap.set(cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, 8000)
+            cap.set(cv2.CAP_PROP_READ_TIMEOUT_MSEC, 8000)
+        else:
+            cap = cv2.VideoCapture(uri)
     else:
-        cap = cv2.VideoCapture(source.uri)
+        cap = cv2.VideoCapture(uri)
     return cap if cap.isOpened() else None
+
+
+def _read_frame(cap) -> tuple[bool, Any]:
+    return cap.read()
+
+
+def _release_capture(cap) -> None:
+    cap.release()
+
+
+def _resize_frame(frame, width: int, height: int):
+    return _cv2().resize(frame, (width, height))
+
+
+def _encode_frame_to_jpeg(frame, jpeg_quality: int) -> str:
+    cv2 = _cv2()
+    _, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, jpeg_quality])
+    return base64.b64encode(buf.tobytes()).decode()
 
 
 async def _stream_loop(workflow_id: int, workflow, source) -> None:
     channel = f"workflow_{workflow_id}"
-    cap = _open_capture(source)
+    try:
+        cap = await asyncio.to_thread(_open_capture, source)
+    except RuntimeError as exc:
+        logger.error(str(exc))
+        await ws_manager.broadcast(channel, {"type": "error", "message": str(exc)})
+        return
     if cap is None:
-        logger.error(f"Cannot open source {source.id} for workflow {workflow_id}")
+        msg = f"Cannot open source {source.id} for workflow {workflow_id}"
+        logger.error(msg)
+        await ws_manager.broadcast(channel, {"type": "error", "message": msg})
         return
 
     target_interval = 1.0 / settings.max_fps
     logger.info(f"Stream started: workflow={workflow_id}, source={source.id}")
+
+    # For 'stream' sources: track consecutive read failures to know when to
+    # force-re-resolve the URL (YouTube/Twitch URLs expire after a few hours).
+    consecutive_failures = 0
+    _MAX_FAILURES_BEFORE_RESOLVE = 3
 
     try:
         while True:
@@ -53,12 +111,26 @@ async def _stream_loop(workflow_id: int, workflow, source) -> None:
                 await asyncio.sleep(0.5)
                 continue
 
-            ret, frame = cap.read()
+            ret, frame = await asyncio.to_thread(_read_frame, cap)
             if not ret:
-                logger.warning(f"Empty frame on workflow {workflow_id}, reopening source...")
-                cap.release()
+                consecutive_failures += 1
+                force_resolve = (
+                    source.type == "stream"
+                    and consecutive_failures >= _MAX_FAILURES_BEFORE_RESOLVE
+                )
+                if force_resolve:
+                    logger.warning(
+                        f"Stream URL likely expired for workflow {workflow_id}, re-resolving…"
+                    )
+                    from app.services.stream_resolver import invalidate
+                    invalidate(source.uri)
+                    consecutive_failures = 0
+                else:
+                    logger.warning(f"Empty frame on workflow {workflow_id}, reopening source…")
+
+                await asyncio.to_thread(_release_capture, cap)
                 await asyncio.sleep(0.5)
-                cap = _open_capture(source)
+                cap = await asyncio.to_thread(_open_capture, source, force_resolve)
                 if cap is None:
                     await ws_manager.broadcast(channel, {
                         "type": "error",
@@ -68,7 +140,14 @@ async def _stream_loop(workflow_id: int, workflow, source) -> None:
                     continue
                 continue
 
-            frame = cv2.resize(frame, (settings.frame_width, settings.frame_height))
+            consecutive_failures = 0
+
+            frame = await asyncio.to_thread(
+                _resize_frame,
+                frame,
+                settings.frame_width,
+                settings.frame_height,
+            )
 
             ctx = await run_workflow(
                 workflow_id=workflow_id,
@@ -79,8 +158,13 @@ async def _stream_loop(workflow_id: int, workflow, source) -> None:
             )
 
             display_frame = ctx.annotated_frame if ctx.annotated_frame is not None else frame
-            _, buf = cv2.imencode(".jpg", display_frame, [cv2.IMWRITE_JPEG_QUALITY, settings.jpeg_quality])
-            b64 = base64.b64encode(buf.tobytes()).decode()
+            b64 = await asyncio.to_thread(
+                _encode_frame_to_jpeg,
+                display_frame,
+                settings.jpeg_quality,
+            )
+
+            from app.services.supervision_service import detections_to_json
 
             detections = detections_to_json(ctx.detections, ctx.class_names) if ctx.detections is not None and len(ctx.detections) > 0 else []
 
@@ -98,7 +182,7 @@ async def _stream_loop(workflow_id: int, workflow, source) -> None:
     except asyncio.CancelledError:
         logger.info(f"Stream stopped: workflow {workflow_id}")
     finally:
-        cap.release()
+        await asyncio.to_thread(_release_capture, cap)
 
 
 async def start_stream(workflow_id: int, workflow, source) -> None:
@@ -115,6 +199,10 @@ async def stop_stream(workflow_id: int) -> None:
             await task
         except asyncio.CancelledError:
             pass
+    from app.services.supervision_service import reset_tracker
+    from app.engine.nodes.event_trigger_node import reset_cooldown
+    reset_tracker(f"workflow_{workflow_id}")
+    reset_cooldown(workflow_id)
 
 
 def is_running(workflow_id: int) -> bool:

@@ -9,6 +9,8 @@ class SourceType(str, Enum):
     video = "video"
     rtsp = "rtsp"
     image = "image"
+    stream = "stream"       # any web stream resolved via yt-dlp (YouTube, Twitch, …)
+    ip_camera = "ip_camera"  # HTTP MJPEG or RTSP camera with builder UI
 
 
 class SourceCreate(BaseModel):

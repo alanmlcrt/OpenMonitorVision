@@ -6,6 +6,12 @@ from app.services.supervision_service import detections_to_json
 _cooldown_state: dict[str, float] = {}
 
 
+def reset_cooldown(workflow_id: int) -> None:
+    prefix = f"wf_{workflow_id}:"
+    for k in [k for k in _cooldown_state if k.startswith(prefix)]:
+        del _cooldown_state[k]
+
+
 class EventTriggerNode(BaseNode):
     type = "event_trigger"
 

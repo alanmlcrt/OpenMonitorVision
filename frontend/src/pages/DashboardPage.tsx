@@ -37,7 +37,7 @@ export function DashboardPage() {
   const runningWorkflows = workflows.filter((w) => w.enabled).length
 
   return (
-    <div className="p-6 space-y-5 max-w-6xl">
+    <div className="w-full p-6 space-y-5">
       {/* Page header */}
       <div>
         <h1 className="text-lg font-semibold text-text-primary">Overview</h1>

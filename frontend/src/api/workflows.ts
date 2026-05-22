@@ -10,4 +10,6 @@ export const workflowsApi = {
   start: (id: number) => api.post<{ status: string }>(`/workflows/${id}/start`),
   stop: (id: number) => api.post<{ status: string }>(`/workflows/${id}/stop`),
   status: (id: number) => api.get<{ running: boolean }>(`/workflows/${id}/status`),
+  validate: (data: { nodes: unknown[]; edges: unknown[] }) =>
+    api.post<{ valid: boolean; errors: string[] }>('/workflows/validate', data),
 }

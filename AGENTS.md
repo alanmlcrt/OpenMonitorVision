@@ -12,6 +12,7 @@ Avant de modifier le code, l’agent doit lire :
 4. `docs/05-workflow-engine.md`
 5. `docs/06-supervision-integration.md`
 6. `docs/10-development-rules.md`
+7. `docs/00-reference.md`
 
 ---
 
@@ -187,6 +188,33 @@ Référence projet : le dossier `/docs` est la source de vérité pour toute doc
 
 - `/docs/00-reference.md` — décrit le dossier de référence et le format de suivi des contributions ;
 - `/docs/CONTRIBUTIONS.md` — (à créer) fichier de suivi des interventions et checklists.
+
+---
+
+## Gestion des plans et synthèses
+
+Au début de chaque session, avant de commencer une nouvelle intervention, l'agent doit faire le point sur les plans et fichiers de progression existants :
+
+- lire les fichiers pertinents dans `docs/progress/` ;
+- identifier les checklists encore ouvertes ;
+- distinguer les actions réellement restantes des éléments déjà terminés mais non cochés ;
+- repérer les plans ou synthèses qui se recoupent, se contredisent ou font doublon.
+
+Si un plan est quasiment terminé et qu'il ne reste que des détails mineurs, l'agent doit :
+
+- terminer ou documenter clairement ces derniers détails ;
+- supprimer le fichier de plan devenu obsolète ;
+- créer un nouveau fichier de synthèse clair dans `docs/progress/` ;
+- y résumer les actions terminées, les validations, les fichiers modifiés et les vrais points encore ouverts.
+
+Si plusieurs plans ou synthèses font doublon, l'agent doit les reprendre et les restructurer :
+
+- combiner les informations utiles dans un seul fichier de synthèse à jour ;
+- retirer les contradictions et les checklists périmées ;
+- supprimer les anciens fichiers Markdown redondants ;
+- garder uniquement les fichiers de suivi qui apportent une information claire et actuelle.
+
+Le nettoyage des fichiers Markdown de suivi fait partie de la tâche lorsque l'agent constate que les plans existants sont fragmentés, quasi terminés ou redondants.
 
 ---
 

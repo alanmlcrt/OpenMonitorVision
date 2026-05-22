@@ -1,4 +1,4 @@
-export type SourceType = 'webcam' | 'video' | 'rtsp' | 'image'
+export type SourceType = 'webcam' | 'video' | 'rtsp' | 'image' | 'stream' | 'ip_camera'
 
 export interface Source {
   id: number

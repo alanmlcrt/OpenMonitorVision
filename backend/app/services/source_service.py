@@ -1,9 +1,9 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
-import cv2
 import base64
 import os
 import time
+from typing import Any
 from app.db.models import Source
 from app.schemas.source import SourceCreate, SourceUpdate
 from app.core.logging import get_logger
@@ -51,29 +51,60 @@ async def delete_source(db: AsyncSession, source_id: int) -> bool:
     return True
 
 
-def _open_capture(source: Source) -> cv2.VideoCapture | None:
+def _cv2():
+    try:
+        import cv2
+    except ImportError as exc:
+        raise RuntimeError("OpenCV is required for source capture") from exc
+    return cv2
+
+
+def _open_capture(source: Source) -> Any | None:
+    cv2 = _cv2()
+    uri = source.uri
+
+    if source.type == "stream":
+        from app.services.stream_resolver import resolve
+        try:
+            uri = resolve(source.uri)
+        except RuntimeError as exc:
+            logger.error("stream_resolver: %s", exc)
+            return None
+
     if source.type == "webcam":
         try:
-            idx = int(source.uri)
+            idx = int(uri)
         except ValueError:
             idx = 0
         cap = cv2.VideoCapture(idx, cv2.CAP_DSHOW)
-    elif source.type == "rtsp":
+    elif source.type in ("rtsp", "stream"):
         os.environ.setdefault(
             "OPENCV_FFMPEG_CAPTURE_OPTIONS",
             "rtsp_transport;tcp|stimeout;8000000|max_delay;5000000",
         )
-        cap = cv2.VideoCapture(source.uri, cv2.CAP_FFMPEG)
+        cap = cv2.VideoCapture(uri, cv2.CAP_FFMPEG)
         cap.set(cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, RTSP_OPEN_TIMEOUT_MS)
         cap.set(cv2.CAP_PROP_READ_TIMEOUT_MSEC, RTSP_READ_TIMEOUT_MS)
+    elif source.type == "ip_camera":
+        # HTTP MJPEG cameras or RTSP cameras (URI already contains credentials)
+        if uri.startswith("rtsp://"):
+            os.environ.setdefault(
+                "OPENCV_FFMPEG_CAPTURE_OPTIONS",
+                "rtsp_transport;tcp|stimeout;8000000|max_delay;5000000",
+            )
+            cap = cv2.VideoCapture(uri, cv2.CAP_FFMPEG)
+            cap.set(cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, RTSP_OPEN_TIMEOUT_MS)
+            cap.set(cv2.CAP_PROP_READ_TIMEOUT_MSEC, RTSP_READ_TIMEOUT_MS)
+        else:
+            cap = cv2.VideoCapture(uri)
     else:
-        cap = cv2.VideoCapture(source.uri)
+        cap = cv2.VideoCapture(uri)
     if not cap.isOpened():
         return None
     return cap
 
 
-def _read_frame(cap: cv2.VideoCapture, timeout_seconds: float = 8.0):
+def _read_frame(cap: Any, timeout_seconds: float = 8.0):
     deadline = time.monotonic() + timeout_seconds
     last_frame = None
     while time.monotonic() < deadline:
@@ -89,6 +120,7 @@ def get_source_preview(source: Source) -> str | None:
     cap = _open_capture(source)
     if cap is None:
         return None
+    cv2 = _cv2()
     try:
         frame = _read_frame(cap)
         if frame is None:
@@ -104,7 +136,10 @@ def get_source_preview(source: Source) -> str | None:
 
 
 def test_source(source: Source) -> dict:
-    cap = _open_capture(source)
+    try:
+        cap = _open_capture(source)
+    except RuntimeError as exc:
+        return {"ok": False, "error": str(exc)}
     if cap is None:
         return {"ok": False, "error": "Cannot open source"}
     try:

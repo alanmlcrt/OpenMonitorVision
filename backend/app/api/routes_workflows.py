@@ -2,7 +2,7 @@ import asyncio
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.database import get_db
-from app.schemas.workflow import WorkflowCreate, WorkflowUpdate, WorkflowRead
+from app.schemas.workflow import WorkflowCreate, WorkflowUpdate, WorkflowRead, WorkflowValidateRequest, WorkflowValidateResponse
 from app.services import workflow_service, source_service
 from app.runtime import stream_manager
 
@@ -17,6 +17,12 @@ async def list_workflows(db: AsyncSession = Depends(get_db)):
 @router.post("", response_model=WorkflowRead, status_code=201)
 async def create_workflow(data: WorkflowCreate, db: AsyncSession = Depends(get_db)):
     return await workflow_service.create_workflow(db, data)
+
+
+@router.post("/validate", response_model=WorkflowValidateResponse)
+async def validate_workflow(data: WorkflowValidateRequest):
+    errors = workflow_service.validate_workflow_graph(data.nodes, data.edges)
+    return WorkflowValidateResponse(valid=len(errors) == 0, errors=errors)
 
 
 @router.get("/{workflow_id}", response_model=WorkflowRead)

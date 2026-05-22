@@ -1,3 +1,5 @@
+import asyncio
+
 from app.engine.base_node import BaseNode
 from app.engine.workflow_context import WorkflowContext
 from app.services import supervision_service
@@ -12,7 +14,8 @@ class OverlayNode(BaseNode):
             context.annotated_frame = context.frame
             return {}
 
-        context.annotated_frame = supervision_service.annotate_frame(
+        context.annotated_frame = await asyncio.to_thread(
+            supervision_service.annotate_frame,
             context.frame,
             context.detections,
             context.class_names,

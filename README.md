@@ -1,5 +1,52 @@
 # OpenMonitorVision
 
+## Setup local automatise
+
+Prerequis:
+
+- Python 3.12.x installe et accessible via `py -3.12`, `python`, ou `python3.12`.
+- Node.js LTS avec `npm`.
+
+Premier setup complet:
+
+```powershell
+.\setup.ps1
+```
+
+Relancer le setup si le projet est deja installe:
+
+```powershell
+.\setup.ps1
+```
+
+Le script compare les fichiers de dependances avec un stamp local et reinstalle seulement si necessaire.
+
+Forcer une reinstallation des dependances:
+
+```powershell
+.\setup.ps1 -ForceInstall
+```
+
+Recreer le venv backend quand il est casse ou cree avec une mauvaise version de Python:
+
+```powershell
+.\setup.ps1 -BackendOnly -RecreateBackendVenv
+```
+
+Lancer les serveurs:
+
+```powershell
+.\start-backend.ps1
+.\start-frontend.ps1
+```
+
+Les scripts `start-*` appellent le setup automatiquement. Pour demarrer sans verification:
+
+```powershell
+.\start-backend.ps1 -SkipSetup
+.\start-frontend.ps1 -SkipSetup
+```
+
 Plateforme locale de supervision vidéo/image basée sur des workflows visuels.
 
 ## Démarrage rapide

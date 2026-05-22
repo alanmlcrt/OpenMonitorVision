@@ -1,0 +1,4 @@
+# Dev / test dependencies (not needed in production)
+pytest>=9.0
+httpx>=0.28
+pytest-asyncio>=0.24

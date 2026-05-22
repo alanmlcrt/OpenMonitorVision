@@ -1,8 +1,10 @@
+import asyncio
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.database import get_db
 from app.schemas.event import EventRead, EventStats
 from app.services import event_service
+from app.core.config import settings
 
 router = APIRouter(prefix="/events", tags=["events"])
 
@@ -22,6 +24,26 @@ async def list_events(
 @router.get("/stats", response_model=EventStats)
 async def get_stats(db: AsyncSession = Depends(get_db)):
     return await event_service.get_stats(db)
+
+
+@router.delete("", status_code=200)
+async def clear_events(
+    source_id: int | None = None,
+    workflow_id: int | None = None,
+    db: AsyncSession = Depends(get_db),
+):
+    """Bulk-delete events, optionally scoped to a source or workflow."""
+    count = await event_service.delete_all_events(db, source_id=source_id, workflow_id=workflow_id)
+    return {"deleted": count}
+
+
+@router.post("/cleanup-frames")
+async def cleanup_frames(older_than_days: int = Query(7, ge=1)):
+    """Delete frame snapshot files older than N days from the exports directory."""
+    deleted = await asyncio.to_thread(
+        event_service.cleanup_frame_files, settings.exports_dir, older_than_days
+    )
+    return {"deleted_files": deleted}
 
 
 @router.get("/{event_id}", response_model=EventRead)

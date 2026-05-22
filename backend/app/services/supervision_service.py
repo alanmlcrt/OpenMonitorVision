@@ -1,15 +1,24 @@
-import supervision as sv
 import numpy as np
 from typing import Any
 
-_trackers: dict[str, sv.ByteTrack] = {}
+_trackers: dict[str, Any] = {}
 
 
-def result_to_detections(ultralytics_result) -> sv.Detections:
+def _sv():
+    try:
+        import supervision as sv
+    except ImportError as exc:
+        raise RuntimeError("supervision is required for detection post-processing") from exc
+    return sv
+
+
+def result_to_detections(ultralytics_result) -> Any:
+    sv = _sv()
     return sv.Detections.from_ultralytics(ultralytics_result)
 
 
-def apply_tracker(detections: sv.Detections, tracker_key: str) -> sv.Detections:
+def apply_tracker(detections: Any, tracker_key: str) -> Any:
+    sv = _sv()
     if tracker_key not in _trackers:
         _trackers[tracker_key] = sv.ByteTrack()
     return _trackers[tracker_key].update_with_detections(detections)
@@ -19,12 +28,12 @@ def reset_tracker(tracker_key: str) -> None:
     _trackers.pop(tracker_key, None)
 
 
-def filter_by_confidence(detections: sv.Detections, min_confidence: float) -> sv.Detections:
+def filter_by_confidence(detections: Any, min_confidence: float) -> Any:
     mask = detections.confidence >= min_confidence
     return detections[mask]
 
 
-def filter_by_classes(detections: sv.Detections, class_names: list[str], model_names: list[str]) -> sv.Detections:
+def filter_by_classes(detections: Any, class_names: list[str], model_names: list[str]) -> Any:
     target_ids = [i for i, name in enumerate(model_names) if name in class_names]
     mask = np.isin(detections.class_id, target_ids)
     return detections[mask]
@@ -32,13 +41,14 @@ def filter_by_classes(detections: sv.Detections, class_names: list[str], model_n
 
 def annotate_frame(
     frame: np.ndarray,
-    detections: sv.Detections,
+    detections: Any,
     class_names: list[str],
     show_boxes: bool = True,
     show_labels: bool = True,
     show_confidence: bool = True,
     show_tracker_id: bool = True,
 ) -> np.ndarray:
+    sv = _sv()
     annotated = frame.copy()
 
     if show_boxes and len(detections) > 0:
@@ -60,7 +70,7 @@ def annotate_frame(
 
 
 def detections_to_json(
-    detections: sv.Detections, class_names: list[str], zone_names: dict[int, str] | None = None
+    detections: Any, class_names: list[str], zone_names: dict[int, str] | None = None
 ) -> list[dict[str, Any]]:
     result = []
     for i in range(len(detections)):

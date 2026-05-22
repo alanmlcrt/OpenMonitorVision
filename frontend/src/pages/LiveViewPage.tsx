@@ -1,10 +1,18 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { workflowsApi } from '../api/workflows'
 import type { Detection, Workflow, WsFrame } from '../types'
 import { Card } from '../components/ui/Card'
 import { Button } from '../components/ui/Button'
 import { Badge } from '../components/ui/Badge'
 import { Select } from '../components/ui/Input'
+
+interface ZoneConfig {
+  name: string
+  points: [number, number][]
+}
+
+const FRAME_WIDTH = 640
+const FRAME_HEIGHT = 360
 
 export function LiveViewPage() {
   const [workflows, setWorkflows] = useState<Workflow[]>([])
@@ -13,9 +21,35 @@ export function LiveViewPage() {
   const [detections, setDetections] = useState<Detection[]>([])
   const [fps, setFps] = useState(0)
   const [isRunning, setIsRunning] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [zoneEditEnabled, setZoneEditEnabled] = useState(false)
+  const [draftZones, setDraftZones] = useState<ZoneConfig[]>([])
+  const [selectedZoneIndex, setSelectedZoneIndex] = useState(0)
+  const [dragPoint, setDragPoint] = useState<{ zoneIndex: number; pointIndex: number } | null>(null)
   const wsRef = useRef<WebSocket | null>(null)
   const fpsCountRef = useRef(0)
   const fpsTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
+  const selectedWorkflow = useMemo(
+    () => workflows.find((workflow) => workflow.id === selectedId) ?? null,
+    [workflows, selectedId],
+  )
+
+  const workflowZones = useMemo(
+    () => extractWorkflowZones(selectedWorkflow),
+    [selectedWorkflow],
+  )
+
+  const hasZoneFilterNode = useMemo(
+    () => Boolean(selectedWorkflow?.nodes.some((node) => node.data?.type === 'zone_filter')),
+    [selectedWorkflow],
+  )
+
+  useEffect(() => {
+    setDraftZones(workflowZones)
+    setSelectedZoneIndex(0)
+    setDragPoint(null)
+  }, [workflowZones])
 
   useEffect(() => {
     workflowsApi.list().then(setWorkflows).catch(() => {})
@@ -46,17 +80,19 @@ export function LiveViewPage() {
 
   const start = async () => {
     if (!selectedId) return
+    setError(null)
     try {
       await workflowsApi.start(selectedId)
       setIsRunning(true)
       connect(selectedId)
-    } catch (e: any) {
-      alert(e.message)
+    } catch (e: unknown) {
+      setError((e as Error).message ?? 'Failed to start workflow')
     }
   }
 
   const stop = async () => {
     if (!selectedId) return
+    setError(null)
     wsRef.current?.close()
     clearInterval(fpsTimerRef.current!)
     await workflowsApi.stop(selectedId)
@@ -66,13 +102,80 @@ export function LiveViewPage() {
     setFps(0)
   }
 
+  const saveZones = async () => {
+    if (!selectedWorkflow || !hasZoneFilterNode) return
+    setError(null)
+    const updatedNodes = writeWorkflowZones(selectedWorkflow, draftZones)
+    try {
+      const updated = await workflowsApi.update(selectedWorkflow.id, { nodes: updatedNodes })
+      setWorkflows((items) => items.map((item) => (item.id === updated.id ? updated : item)))
+    } catch (e: unknown) {
+      setError((e as Error).message ?? 'Failed to save zones')
+    }
+  }
+
+  const addZone = () => {
+    if (!hasZoneFilterNode) return
+    const nextZone = {
+      name: `Zone ${draftZones.length + 1}`,
+      points: [[160, 100], [480, 100], [480, 260], [160, 260]] as [number, number][],
+    }
+    setDraftZones((zones) => [...zones, nextZone])
+    setSelectedZoneIndex(draftZones.length)
+  }
+
+  const deleteZone = () => {
+    if (draftZones.length === 0) return
+    setDraftZones((zones) => zones.filter((_, index) => index !== selectedZoneIndex))
+    setSelectedZoneIndex((index) => Math.max(0, index - 1))
+  }
+
+  const updateZone = (zoneIndex: number, patch: Partial<ZoneConfig>) => {
+    setDraftZones((zones) =>
+      zones.map((zone, index) => (index === zoneIndex ? { ...zone, ...patch } : zone)),
+    )
+  }
+
+  const pointFromEvent = (event: React.PointerEvent<SVGSVGElement>) => {
+    const rect = event.currentTarget.getBoundingClientRect()
+    const x = ((event.clientX - rect.left) / rect.width) * FRAME_WIDTH
+    const y = ((event.clientY - rect.top) / rect.height) * FRAME_HEIGHT
+    return [
+      Math.round(Math.min(FRAME_WIDTH, Math.max(0, x))),
+      Math.round(Math.min(FRAME_HEIGHT, Math.max(0, y))),
+    ] as [number, number]
+  }
+
+  const addZonePoint = (event: React.PointerEvent<SVGSVGElement>) => {
+    if (!zoneEditEnabled || dragPoint || draftZones.length === 0) return
+    const zone = draftZones[selectedZoneIndex]
+    if (!zone) return
+    updateZone(selectedZoneIndex, { points: [...zone.points, pointFromEvent(event)] })
+  }
+
+  const moveZonePoint = (event: React.PointerEvent<SVGSVGElement>) => {
+    if (!zoneEditEnabled || !dragPoint) return
+    const zone = draftZones[dragPoint.zoneIndex]
+    if (!zone) return
+    const point = pointFromEvent(event)
+    updateZone(dragPoint.zoneIndex, {
+      points: zone.points.map((item, index) => (index === dragPoint.pointIndex ? point : item)),
+    })
+  }
+
+  const removeZonePoint = (zoneIndex: number, pointIndex: number) => {
+    const zone = draftZones[zoneIndex]
+    if (!zone) return
+    updateZone(zoneIndex, { points: zone.points.filter((_, index) => index !== pointIndex) })
+  }
+
   useEffect(() => () => {
     wsRef.current?.close()
     clearInterval(fpsTimerRef.current!)
   }, [])
 
   return (
-    <div className="p-6 space-y-4 h-full flex flex-col max-w-7xl">
+    <div className="h-full w-full p-6 space-y-4 flex flex-col">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -82,7 +185,10 @@ export function LiveViewPage() {
         <div className="flex items-center gap-2">
           <Select
             value={selectedId ?? ''}
-            onChange={(e) => setSelectedId(e.target.value ? Number(e.target.value) : null)}
+            onChange={(e) => {
+              setSelectedId(e.target.value ? Number(e.target.value) : null)
+              setZoneEditEnabled(false)
+            }}
             className="w-52"
           >
             <option value="">Select workflow...</option>
@@ -95,8 +201,32 @@ export function LiveViewPage() {
           ) : (
             <Button onClick={start} disabled={!selectedId}>Start</Button>
           )}
+          <Button
+            variant={zoneEditEnabled ? 'primary' : 'secondary'}
+            onClick={() => setZoneEditEnabled((value) => !value)}
+            disabled={!selectedWorkflow}
+          >
+            Zones
+          </Button>
         </div>
       </div>
+
+      {/* Error banner */}
+      {error && (
+        <div className="flex items-center gap-3 rounded-lg border border-danger/30 bg-danger-subtle px-4 py-2.5 text-sm text-danger-text">
+          <svg viewBox="0 0 16 16" width={14} height={14} fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round">
+            <circle cx="8" cy="8" r="6" />
+            <line x1="8" y1="5" x2="8" y2="8.5" />
+            <circle cx="8" cy="11" r="0.5" fill="currentColor" />
+          </svg>
+          <span className="flex-1">{error}</span>
+          <button onClick={() => setError(null)} className="opacity-60 hover:opacity-100 transition-opacity">
+            <svg viewBox="0 0 12 12" width={12} height={12} stroke="currentColor" strokeWidth={1.5} strokeLinecap="round">
+              <line x1="2" y1="2" x2="10" y2="10" /><line x1="10" y1="2" x2="2" y2="10" />
+            </svg>
+          </button>
+        </div>
+      )}
 
       {/* Content */}
       <div className="flex gap-4 flex-1 min-h-0">
@@ -104,11 +234,26 @@ export function LiveViewPage() {
         <div className="flex-1 flex flex-col gap-2 min-w-0">
           <Card padding="none" className="flex-1 overflow-hidden relative bg-bg-base">
             {frame ? (
-              <img
-                src={`data:image/jpeg;base64,${frame}`}
-                alt="Live stream"
-                className="w-full h-full object-contain"
-              />
+              <div className="flex h-full w-full items-center justify-center">
+                <div className="relative aspect-video max-h-full w-full max-w-full">
+                  <img
+                    src={`data:image/jpeg;base64,${frame}`}
+                    alt="Live stream"
+                    className="absolute inset-0 h-full w-full object-contain"
+                  />
+                  <ZoneOverlay
+                    zones={draftZones}
+                    selectedZoneIndex={selectedZoneIndex}
+                    editable={zoneEditEnabled}
+                    onSelectZone={setSelectedZoneIndex}
+                    onStartDrag={setDragPoint}
+                    onRemovePoint={removeZonePoint}
+                    onPointerDown={addZonePoint}
+                    onPointerMove={moveZonePoint}
+                    onPointerEnd={() => setDragPoint(null)}
+                  />
+                </div>
+              </div>
             ) : (
               <div className="w-full h-full min-h-64 flex flex-col items-center justify-center gap-2">
                 <div className={[
@@ -133,6 +278,52 @@ export function LiveViewPage() {
 
         {/* Side panel */}
         <div className="w-60 flex-shrink-0 flex flex-col gap-3">
+          <Card padding="none" className="overflow-hidden">
+            <div className="border-b border-border-subtle px-4 py-3">
+              <div className="flex items-center justify-between gap-2">
+                <h3 className="text-sm font-medium text-text-primary">Zones</h3>
+                <Badge variant={zoneEditEnabled ? 'accent' : 'neutral'}>
+                  {draftZones.length}
+                </Badge>
+              </div>
+            </div>
+            <div className="space-y-2 p-3">
+              <div className="flex gap-2">
+                <Button size="xs" variant="secondary" className="flex-1" onClick={addZone} disabled={!selectedWorkflow || !hasZoneFilterNode}>
+                  Add
+                </Button>
+                <Button size="xs" variant="danger" onClick={deleteZone} disabled={!selectedWorkflow || !hasZoneFilterNode || draftZones.length === 0}>
+                  Delete
+                </Button>
+                <Button size="xs" onClick={saveZones} disabled={!selectedWorkflow || !hasZoneFilterNode}>
+                  Save
+                </Button>
+              </div>
+              {!hasZoneFilterNode ? (
+                <p className="text-xs text-text-tertiary">No Zone Filter node</p>
+              ) : draftZones.length === 0 ? (
+                <p className="text-xs text-text-tertiary">No zones configured</p>
+              ) : (
+                <div className="max-h-28 overflow-y-auto rounded border border-border-subtle bg-bg-overlay">
+                  {draftZones.map((zone, index) => (
+                    <button
+                      key={`${zone.name}_${index}`}
+                      type="button"
+                      onClick={() => setSelectedZoneIndex(index)}
+                      className={[
+                        'flex w-full items-center justify-between border-b border-border-subtle px-2 py-1.5 text-left text-xs last:border-b-0',
+                        selectedZoneIndex === index ? 'bg-accent-subtle text-accent' : 'text-text-secondary hover:text-text-primary',
+                      ].join(' ')}
+                    >
+                      <span className="truncate">{zone.name || `Zone ${index + 1}`}</span>
+                      <span className="font-mono text-2xs text-text-tertiary">{zone.points.length} pts</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </Card>
+
           <Card padding="none" className="flex-1 overflow-hidden flex flex-col">
             <div className="px-4 py-3 border-b border-border-subtle flex items-center justify-between">
               <h3 className="text-sm font-medium text-text-primary">Detections</h3>
@@ -171,5 +362,127 @@ export function LiveViewPage() {
         </div>
       </div>
     </div>
+  )
+}
+
+function extractWorkflowZones(workflow: Workflow | null): ZoneConfig[] {
+  if (!workflow) return []
+  const zoneNode = workflow.nodes.find((node) => node.data?.type === 'zone_filter')
+  const zones = zoneNode?.data?.config?.zones
+  if (!Array.isArray(zones)) return []
+  return (zones as unknown[]).map((zone, index) => {
+    const item = zone as { name?: unknown; points?: unknown }
+    const points = Array.isArray(item.points) ? item.points : []
+    return {
+      name: typeof item.name === 'string' && item.name.trim() ? item.name : `Zone ${index + 1}`,
+      points: points
+          .filter((point: unknown): point is [number, number] =>
+            Array.isArray(point) &&
+            point.length >= 2 &&
+            Number.isFinite(Number(point[0])) &&
+            Number.isFinite(Number(point[1])),
+          )
+          .map(([x, y]) => [Number(x), Number(y)] as [number, number])
+    }
+  })
+}
+
+function writeWorkflowZones(workflow: Workflow, zones: ZoneConfig[]) {
+  return workflow.nodes.map((node) => {
+    if (node.data?.type !== 'zone_filter') return node
+    return {
+      ...node,
+      data: {
+        ...node.data,
+        config: {
+          ...(node.data.config ?? {}),
+          zones: zones.map((zone) => ({
+            name: zone.name,
+            points: zone.points.map(([x, y]) => [Math.round(x), Math.round(y)]),
+          })),
+        },
+      },
+    }
+  })
+}
+
+function ZoneOverlay({
+  zones,
+  selectedZoneIndex,
+  editable,
+  onSelectZone,
+  onStartDrag,
+  onRemovePoint,
+  onPointerDown,
+  onPointerMove,
+  onPointerEnd,
+}: {
+  zones: ZoneConfig[]
+  selectedZoneIndex: number
+  editable: boolean
+  onSelectZone: (index: number) => void
+  onStartDrag: (drag: { zoneIndex: number; pointIndex: number }) => void
+  onRemovePoint: (zoneIndex: number, pointIndex: number) => void
+  onPointerDown: (event: React.PointerEvent<SVGSVGElement>) => void
+  onPointerMove: (event: React.PointerEvent<SVGSVGElement>) => void
+  onPointerEnd: () => void
+}) {
+  return (
+    <svg
+      viewBox={`0 0 ${FRAME_WIDTH} ${FRAME_HEIGHT}`}
+      className={[
+        'absolute inset-0 h-full w-full',
+        editable ? 'pointer-events-auto cursor-crosshair' : 'pointer-events-none',
+      ].join(' ')}
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={onPointerEnd}
+      onPointerLeave={onPointerEnd}
+    >
+      {zones.map((zone, zoneIndex) => {
+        const isSelected = zoneIndex === selectedZoneIndex
+        const points = zone.points.map(([x, y]) => `${x},${y}`).join(' ')
+        return (
+          <g key={`${zone.name}_${zoneIndex}`} opacity={isSelected || !editable ? 1 : 0.45}>
+            {zone.points.length > 2 && (
+              <polygon
+                points={points}
+                fill={isSelected ? '#a78bfa28' : '#14b8a620'}
+                stroke={isSelected ? '#a78bfa' : '#14b8a6'}
+                strokeWidth={2}
+                onPointerDown={(event) => {
+                  event.stopPropagation()
+                  onSelectZone(zoneIndex)
+                }}
+              />
+            )}
+            {zone.points.length === 2 && (
+              <polyline points={points} fill="none" stroke="#a78bfa" strokeWidth={2} />
+            )}
+            {editable && zone.points.map(([x, y], pointIndex) => (
+              <circle
+                key={`${zoneIndex}_${pointIndex}`}
+                cx={x}
+                cy={y}
+                r={isSelected ? 7 : 5}
+                fill={isSelected ? '#a78bfa' : '#14b8a6'}
+                stroke="#09090d"
+                strokeWidth={2}
+                className="cursor-grab"
+                onPointerDown={(event) => {
+                  event.stopPropagation()
+                  onSelectZone(zoneIndex)
+                  onStartDrag({ zoneIndex, pointIndex })
+                }}
+                onDoubleClick={(event) => {
+                  event.stopPropagation()
+                  onRemovePoint(zoneIndex, pointIndex)
+                }}
+              />
+            ))}
+          </g>
+        )
+      })}
+    </svg>
   )
 }

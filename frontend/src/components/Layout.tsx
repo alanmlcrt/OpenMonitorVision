@@ -12,7 +12,7 @@ const nav = [
 
 export function Layout({ children }: { children: React.ReactNode }) {
   return (
-    <div className="flex h-screen overflow-hidden bg-bg-base">
+    <div className="flex h-screen w-screen overflow-hidden bg-bg-base">
       <aside className="w-52 flex-shrink-0 flex flex-col border-r border-border-subtle">
         {/* Logo */}
         <div className="h-12 flex items-center px-4 border-b border-border-subtle">
@@ -56,7 +56,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
         </div>
       </aside>
 
-      <main className="flex-1 min-w-0 overflow-y-auto bg-bg-base">
+      <main className="h-full flex-1 min-w-0 overflow-y-auto bg-bg-base">
         {children}
       </main>
     </div>

@@ -1,6 +1,6 @@
 from pydantic import BaseModel
 from datetime import datetime
-from typing import Optional, Any
+from typing import Optional, Any, List
 
 
 class WorkflowCreate(BaseModel):
@@ -26,3 +26,13 @@ class WorkflowRead(BaseModel):
     updated_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+class WorkflowValidateRequest(BaseModel):
+    nodes: List[dict[str, Any]] = []
+    edges: List[dict[str, Any]] = []
+
+
+class WorkflowValidateResponse(BaseModel):
+    valid: bool
+    errors: List[str]

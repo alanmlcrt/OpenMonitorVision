@@ -25,6 +25,13 @@ export function EventsPage() {
     load()
   }
 
+  const clearAll = async () => {
+    if (!confirm(`Delete all ${events.length > 0 ? 'visible' : ''} events? This cannot be undone.`)) return
+    await eventsApi.clearAll()
+    setPage(0)
+    load()
+  }
+
   const exportCsv = () => {
     const rows = [
       ['ID', 'Timestamp', 'Class', 'Confidence', 'Source ID', 'Zone', 'Tracker ID'],
@@ -54,7 +61,7 @@ export function EventsPage() {
   }
 
   return (
-    <div className="p-6 space-y-5 max-w-6xl">
+    <div className="w-full p-6 space-y-5">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-lg font-semibold text-text-primary">Events</h1>
@@ -69,6 +76,9 @@ export function EventsPage() {
           />
           <Button variant="secondary" size="sm" onClick={exportCsv}>
             Export CSV
+          </Button>
+          <Button variant="danger" size="sm" onClick={clearAll}>
+            Clear all
           </Button>
         </div>
       </div>

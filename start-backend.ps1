@@ -1,48 +1,43 @@
-# Start the FastAPI backend
+param(
+    [switch]$SkipSetup,
+    [switch]$ForceSetup
+)
+
+# Start the FastAPI backend.
 $ErrorActionPreference = "Stop"
 
-Set-Location "$PSScriptRoot\backend"
+function Invoke-Checked {
+    param(
+        [Parameter(Mandatory = $true)]
+        [scriptblock]$Script,
+        [string]$ErrorMessage = "Command failed"
+    )
 
-function Get-ProjectPython {
-    $python = Get-Command python -ErrorAction SilentlyContinue
-    if ($python) {
-        return "python"
+    & $Script
+    if ($LASTEXITCODE -ne 0) {
+        throw "$ErrorMessage (exit code $LASTEXITCODE)"
     }
-
-    $py = Get-Command py -ErrorAction SilentlyContinue
-    if ($py) {
-        return "py -3"
-    }
-
-    throw "Python is not available on PATH. Install Python 3.12+ or add it to PATH, then rerun this script."
 }
 
-function Test-Venv {
-    if (-not (Test-Path "venv\Scripts\python.exe")) {
-        return $false
+if (-not $SkipSetup) {
+    $setupArgs = @("-BackendOnly")
+    if ($ForceSetup) {
+        $setupArgs += "-ForceInstall"
     }
 
-    & ".\venv\Scripts\python.exe" --version *> $null
-    return $LASTEXITCODE -eq 0
+    Invoke-Checked {
+        & (Join-Path $PSScriptRoot "setup.ps1") @setupArgs
+    } "Backend setup failed"
 }
 
-if (-not (Test-Venv)) {
-    if (Test-Path "venv") {
-        Write-Host "Existing venv is not usable. Recreating it..."
-        Remove-Item -Recurse -Force "venv"
-    } else {
-        Write-Host "Creating virtual environment..."
-    }
+Set-Location (Join-Path $PSScriptRoot "backend")
 
-    $projectPython = Get-ProjectPython
-    Invoke-Expression "$projectPython -m venv venv"
+$python = ".\venv\Scripts\python.exe"
+if (-not (Test-Path -LiteralPath $python)) {
+    throw "Backend venv is missing. Run .\setup.ps1 -BackendOnly first."
 }
-
-Write-Host "Activating venv..."
-& ".\venv\Scripts\Activate.ps1"
-
-Write-Host "Installing dependencies..."
-python -m pip install -r requirements.txt --quiet
 
 Write-Host "Starting backend on http://127.0.0.1:8000"
-python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
+Invoke-Checked {
+    & $python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
+} "Backend stopped with an error"

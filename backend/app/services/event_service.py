@@ -1,7 +1,8 @@
+import os
+import glob
+from datetime import datetime, timezone, timedelta
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
-from datetime import datetime
-from typing import Any
+from sqlalchemy import select, func, delete
 from app.db.models import Event, Source
 from app.schemas.event import EventStats
 
@@ -72,3 +73,36 @@ async def get_stats(db: AsyncSession) -> EventStats:
     by_hour = {row[0]: row[1] for row in by_hour_result.all()}
 
     return EventStats(total=total, by_class=by_class, by_source=by_source, by_hour=by_hour)
+
+
+async def delete_all_events(
+    db: AsyncSession,
+    source_id: int | None = None,
+    workflow_id: int | None = None,
+) -> int:
+    """Delete events in bulk, optionally scoped to a source or workflow. Returns deleted count."""
+    q = delete(Event)
+    if source_id is not None:
+        q = q.where(Event.source_id == source_id)
+    if workflow_id is not None:
+        q = q.where(Event.workflow_id == workflow_id)
+    result = await db.execute(q)
+    await db.commit()
+    return result.rowcount
+
+
+def cleanup_frame_files(exports_dir: str, older_than_days: int = 7) -> int:
+    """Delete JPEG frame snapshots older than `older_than_days` days. Returns deleted count."""
+    if not os.path.isdir(exports_dir):
+        return 0
+    cutoff = datetime.now(tz=timezone.utc) - timedelta(days=older_than_days)
+    deleted = 0
+    for path in glob.glob(os.path.join(exports_dir, "*.jpg")):
+        try:
+            mtime = datetime.fromtimestamp(os.path.getmtime(path), tz=timezone.utc)
+            if mtime < cutoff:
+                os.remove(path)
+                deleted += 1
+        except OSError:
+            pass
+    return deleted

@@ -46,7 +46,7 @@ export function ModelsPage() {
   }
 
   return (
-    <div className="p-6 space-y-5 max-w-3xl">
+    <div className="w-full p-6 space-y-5">
       <div>
         <h1 className="text-lg font-semibold text-text-primary">Models</h1>
         <p className="text-sm text-text-secondary mt-0.5">Manage YOLO model weights</p>

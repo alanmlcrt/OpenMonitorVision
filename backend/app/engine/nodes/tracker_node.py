@@ -1,3 +1,5 @@
+import asyncio
+
 from app.engine.base_node import BaseNode
 from app.engine.workflow_context import WorkflowContext
 from app.services import supervision_service
@@ -11,5 +13,9 @@ class TrackerNode(BaseNode):
         if not config.get("enabled", True) or context.detections is None:
             return {}
         tracker_key = f"workflow_{context.workflow_id}"
-        context.detections = supervision_service.apply_tracker(context.detections, tracker_key)
+        context.detections = await asyncio.to_thread(
+            supervision_service.apply_tracker,
+            context.detections,
+            tracker_key,
+        )
         return {}
