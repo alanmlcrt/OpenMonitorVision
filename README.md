@@ -1,113 +1,30 @@
 # OpenMonitorVision
 
-## Setup local automatise
+OpenMonitorVision est une plateforme locale de supervision vidéo/image basée sur des workflows visuels.
 
-Prerequis:
+Objectif MVP :
 
-- Python 3.12.x installe et accessible via `py -3.12`, `python`, ou `python3.12`.
-- Node.js LTS avec `npm`.
+1. Ajouter une source webcam ou vidéo locale.
+2. Construire un workflow `Source -> YOLO Detect -> Tracker -> Confidence Filter -> Event Trigger -> Save Event -> Overlay`.
+3. Lancer le workflow.
+4. Voir le flux annoté en live.
+5. Sauvegarder les événements en SQLite.
+6. Consulter les événements et statistiques simples dans la WebUI.
 
-Premier setup complet:
-
-```powershell
-.\setup.ps1
-```
-
-Relancer le setup si le projet est deja installe:
-
-```powershell
-.\setup.ps1
-```
-
-Le script compare les fichiers de dependances avec un stamp local et reinstalle seulement si necessaire.
-
-Forcer une reinstallation des dependances:
-
-```powershell
-.\setup.ps1 -ForceInstall
-```
-
-Recreer le venv backend quand il est casse ou cree avec une mauvaise version de Python:
-
-```powershell
-.\setup.ps1 -BackendOnly -RecreateBackendVenv
-```
-
-Lancer les serveurs:
-
-```powershell
-.\start-backend.ps1
-.\start-frontend.ps1
-```
-
-Les scripts `start-*` appellent le setup automatiquement. Pour demarrer sans verification:
-
-```powershell
-.\start-backend.ps1 -SkipSetup
-.\start-frontend.ps1 -SkipSetup
-```
-
-Plateforme locale de supervision vidéo/image basée sur des workflows visuels.
-
-## Démarrage rapide
-
-### Backend
-
-```powershell
-cd backend
-python -m venv venv
-.\venv\Scripts\Activate.ps1
-pip install -r requirements.txt
-uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
-```
-
-API docs: http://localhost:8000/docs
-
-### Frontend
-
-```powershell
-cd frontend
-npm install
-npm run dev
-```
-
-UI: http://localhost:5173
-
-### Workflow MVP
-
-1. **Sources** → ajouter une webcam (index `0`) ou un fichier vidéo
-2. **Workflows** → créer un workflow avec les nodes: Source → YOLO Detect → Tracker → Confidence Filter → Event Trigger → Save Event → Overlay → connecter et sauvegarder
-3. **Live** → sélectionner le workflow → Start
-4. **Events** → consulter les événements détectés
-
----
-
-## Objectif
-
-Créer une plateforme bac à sable permettant de :
-
-- brancher des sources vidéo ou image ;
-- créer des workflows par nodes ;
-- détecter des objets avec YOLO ;
-- utiliser certaines briques de Roboflow Supervision ;
-- déclencher des événements ;
-- sauvegarder les événements en SQLite ;
-- afficher les flux annotés en temps réel ;
-- générer des statistiques.
+Tant que ce scénario n'est pas fiable, les fonctions avancées comme training, MQTT, notifications ou multi-cam restent secondaires.
 
 ## Stack
 
 Backend :
 
-- Python
+- Python 3.12
 - FastAPI
-- SQLite
+- SQLite / SQLAlchemy / aiosqlite
 - OpenCV
 - PyTorch
-- Ultralytics
-- Supervision
-
-Note: La stack Python s'appuie sur Roboflow Supervision — voir https://raw.githubusercontent.com/roboflow/supervision/refs/heads/develop/README.md pour les dépendances recommandées et instructions d'installation. L'inférence privilégie CUDA si disponible.
+- Ultralytics YOLO
+- Roboflow Supervision
+- WebSockets
 
 Frontend :
 
@@ -116,41 +33,108 @@ Frontend :
 - Vite
 - Tailwind CSS
 - React Flow
-- Konva
 - Recharts
 
-## Lancement backend
+## Setup Local Automatisé
 
-```bash
-cd backend
-python -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-uvicorn app.main:app --reload
+Prérequis :
+
+- Python 3.12.x accessible via `py -3.12`, `python` ou `python3.12`.
+- Node.js LTS avec `npm`.
+
+Premier setup ou mise à jour :
+
+```powershell
+.\setup.ps1
 ```
 
-Sous Windows PowerShell :
+Recréer le venv backend s'il est cassé ou utilise une mauvaise version de Python :
+
+```powershell
+.\setup.ps1 -BackendOnly -RecreateBackendVenv
+```
+
+Installer les dépendances de test backend :
+
+```powershell
+backend\venv\Scripts\python.exe -m pip install -r backend\requirements-dev.txt
+```
+
+Lancer les serveurs :
+
+```powershell
+.\start-backend.ps1
+.\start-frontend.ps1
+```
+
+URLs locales :
+
+- API : http://127.0.0.1:8000
+- API docs : http://127.0.0.1:8000/docs
+- WebUI : http://127.0.0.1:5173
+
+## Validation
+
+Backend :
 
 ```powershell
 cd backend
-python -m venv .venv
-.venv\Scripts\Activate.ps1
-pip install -r requirements.txt
-uvicorn app.main:app --reload
+$env:TEMP="$PWD\.tmp"; $env:TMP=$env:TEMP; $env:TMPDIR=$env:TEMP
+.\venv\Scripts\python.exe -m compileall app tests
+.\venv\Scripts\python.exe -m pytest tests -q --basetemp=.tmp\pytest -p no:cacheprovider
 ```
 
-## Lancement frontend
+Frontend :
 
-```bash
+```powershell
 cd frontend
-npm install
-npm run dev
+npx tsc --noEmit
+npm run build
 ```
+
+Note Windows/sandbox : si Vite/esbuild échoue avec `Cannot read directory "../../../.."`, relancer le build hors sandbox. Ce symptôme vient de l'environnement d'exécution, pas du code frontend.
+
+## Workflow MVP
+
+1. Ouvrir **Sources** et ajouter une webcam (`0`) ou un fichier vidéo local.
+2. Cliquer **Test** pour vérifier que la source renvoie des dimensions.
+3. Ouvrir **Workflows** et créer la chaîne MVP :
+   `Source -> YOLO Detect -> Tracker -> Confidence Filter -> Event Trigger -> Save Event -> Overlay`.
+4. Configurer le node `Source` avec la source créée.
+5. Configurer le node `YOLO Detect` avec un modèle local `.pt` ou le modèle par défaut.
+6. Sauvegarder le workflow.
+7. Ouvrir **Live**, sélectionner le workflow, cliquer **Start**.
+8. Vérifier que le flux annoté et les détections apparaissent.
+9. Ouvrir **Events** pour consulter les événements, snapshots et filtres.
+10. Ouvrir **Overview** pour vérifier les statistiques.
+
+## Données Locales
+
+Les fichiers générés restent sous `backend/data/` :
+
+- `db/` : SQLite ;
+- `models/` : poids YOLO ;
+- `uploads/` : vidéos/images locales ;
+- `exports/` : snapshots d'événements ;
+- `datasets/` : datasets YOLO ;
+- `training_runs/` : sorties d'entraînement ;
+- `ultralytics/` : configuration locale Ultralytics.
+
+Ces dossiers sont ignorés par Git.
 
 ## Documentation
 
-La documentation projet est dans `/docs`.
+La documentation projet est dans `docs/`.
 
-Le fichier principal pour les agents IA est `AGENTS.md`.
+Fichiers principaux :
 
-UI : l'interface doit viser un rendu propre et minimal inspiré par OpenChamber (dashboard sobre, navigation latérale, composants clairs). Utiliser Tailwind CSS pour la cohérence visuelle.
+- `AGENTS.md`
+- `docs/01-product-vision.md`
+- `docs/02-architecture.md`
+- `docs/05-workflow-engine.md`
+- `docs/06-supervision-integration.md`
+- `docs/07-api.md`
+- `docs/10-development-rules.md`
+- `docs/progress/`
+
+UI : viser un rendu propre et minimal inspiré par OpenChamber, avec une navigation claire et des composants réutilisables.

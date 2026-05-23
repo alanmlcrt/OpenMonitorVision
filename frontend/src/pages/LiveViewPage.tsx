@@ -11,8 +11,33 @@ interface ZoneConfig {
   points: [number, number][]
 }
 
-const FRAME_WIDTH = 640
-const FRAME_HEIGHT = 360
+interface DisplaySettings {
+  boxes: boolean
+  labels: boolean
+  confidence: boolean
+  trackerId: boolean
+  fontSize: number
+}
+
+const DEFAULT_DISPLAY: DisplaySettings = {
+  boxes: true,
+  labels: true,
+  confidence: true,
+  trackerId: false,
+  fontSize: 13,
+}
+
+// Match the backend frame dimensions (settings.frame_width / frame_height).
+// Zone polygon points are stored in this coordinate space so sv.PolygonZone
+// filters detections in the same frame the WebSocket streams.
+const FRAME_WIDTH = 1280
+const FRAME_HEIGHT = 720
+
+// Palette for client-side detection rendering (cycles by class_id)
+const DET_PALETTE = [
+  '#3b82f6','#ef4444','#22c55e','#f59e0b','#a78bfa',
+  '#ec4899','#06b6d4','#f97316','#84cc16','#14b8a6',
+]
 
 export function LiveViewPage() {
   const [workflows, setWorkflows] = useState<Workflow[]>([])
@@ -22,6 +47,16 @@ export function LiveViewPage() {
   const [fps, setFps] = useState(0)
   const [isRunning, setIsRunning] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [display, setDisplay] = useState<DisplaySettings>(() => {
+    try { return { ...DEFAULT_DISPLAY, ...JSON.parse(localStorage.getItem('omv-display') ?? '{}') } }
+    catch { return DEFAULT_DISPLAY }
+  })
+  const patchDisplay = (patch: Partial<DisplaySettings>) => {
+    const next = { ...display, ...patch }
+    setDisplay(next)
+    localStorage.setItem('omv-display', JSON.stringify(next))
+  }
+
   const [zoneEditEnabled, setZoneEditEnabled] = useState(false)
   const [draftZones, setDraftZones] = useState<ZoneConfig[]>([])
   const [selectedZoneIndex, setSelectedZoneIndex] = useState(0)
@@ -42,6 +77,11 @@ export function LiveViewPage() {
 
   const hasZoneFilterNode = useMemo(
     () => Boolean(selectedWorkflow?.nodes.some((node) => node.data?.type === 'zone_filter')),
+    [selectedWorkflow],
+  )
+
+  const hasOverlayNode = useMemo(
+    () => Boolean(selectedWorkflow?.nodes.some((node) => node.data?.type === 'overlay')),
     [selectedWorkflow],
   )
 
@@ -241,6 +281,10 @@ export function LiveViewPage() {
                     alt="Live stream"
                     className="absolute inset-0 h-full w-full object-contain"
                   />
+                  {/* Client-side detection rendering — only when no backend Overlay node */}
+                  {!hasOverlayNode && (
+                    <DetectionOverlay detections={detections} display={display} />
+                  )}
                   <ZoneOverlay
                     zones={draftZones}
                     selectedZoneIndex={selectedZoneIndex}
@@ -324,6 +368,68 @@ export function LiveViewPage() {
             </div>
           </Card>
 
+          {/* Display settings */}
+          <Card padding="none" className="overflow-hidden">
+            <div className="border-b border-border-subtle px-4 py-2.5">
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-medium text-text-primary">Affichage</h3>
+                {hasOverlayNode && (
+                  <span className="text-2xs text-text-disabled" title="Overlay node présent dans le workflow — les annotations sont rendues côté backend">backend</span>
+                )}
+              </div>
+            </div>
+            <div className="space-y-2 p-3">
+              {hasOverlayNode ? (
+                <p className="text-xs text-text-tertiary">
+                  Un nœud Overlay est présent dans le workflow. Les annotations sont rendues côté serveur. Supprimez-le pour activer les contrôles ci-dessous.
+                </p>
+              ) : (
+                <>
+                  <div className="space-y-1">
+                    {(
+                      [
+                        { key: 'boxes', label: 'Boîtes' },
+                        { key: 'labels', label: 'Labels' },
+                        { key: 'confidence', label: 'Confiance' },
+                        { key: 'trackerId', label: 'Tracker ID' },
+                      ] as { key: keyof DisplaySettings; label: string }[]
+                    ).map(({ key, label }) => (
+                      <label key={key} className="flex cursor-pointer items-center justify-between gap-2">
+                        <span className="text-xs text-text-secondary">{label}</span>
+                        <button
+                          type="button"
+                          role="switch"
+                          aria-checked={!!display[key]}
+                          onClick={() => patchDisplay({ [key]: !display[key] } as Partial<DisplaySettings>)}
+                          className={[
+                            'relative inline-flex h-4 w-7 shrink-0 items-center rounded-full transition-colors',
+                            display[key] ? 'bg-accent' : 'bg-border-strong',
+                          ].join(' ')}
+                        >
+                          <span className={[
+                            'inline-block h-3 w-3 rounded-full bg-white shadow transition-transform',
+                            display[key] ? 'translate-x-3.5' : 'translate-x-0.5',
+                          ].join(' ')} />
+                        </button>
+                      </label>
+                    ))}
+                  </div>
+                  {display.labels && (
+                    <div>
+                      <p className="mb-1 text-2xs text-text-disabled">Taille — {display.fontSize} px</p>
+                      <input
+                        type="range" min={9} max={20} step={1}
+                        value={display.fontSize}
+                        onChange={(e) => patchDisplay({ fontSize: Number(e.target.value) })}
+                        className="w-full accent-accent"
+                      />
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          </Card>
+
           <Card padding="none" className="flex-1 overflow-hidden flex flex-col">
             <div className="px-4 py-3 border-b border-border-subtle flex items-center justify-between">
               <h3 className="text-sm font-medium text-text-primary">Detections</h3>
@@ -362,6 +468,74 @@ export function LiveViewPage() {
         </div>
       </div>
     </div>
+  )
+}
+
+// ─── Client-side detection overlay ───────────────────────────────────────────
+
+function DetectionOverlay({
+  detections,
+  display,
+}: {
+  detections: import('../types').Detection[]
+  display: DisplaySettings
+}) {
+  if (!display.boxes && !display.labels) return null
+  return (
+    <svg
+      viewBox={`0 0 ${FRAME_WIDTH} ${FRAME_HEIGHT}`}
+      className="pointer-events-none absolute inset-0 h-full w-full"
+    >
+      {detections.map((det, i) => {
+        if (!det.bbox) return null
+        const { x1, y1, x2, y2 } = det.bbox
+        const color = DET_PALETTE[det.class_id % DET_PALETTE.length]
+        const labelParts = [
+          det.class_name,
+          display.confidence && det.confidence != null
+            ? `${Math.round(det.confidence * 100)}%`
+            : '',
+          display.trackerId && det.tracker_id != null ? `#${det.tracker_id}` : '',
+        ].filter(Boolean)
+        const labelText = labelParts.join(' ')
+        const charW = display.fontSize * 0.62
+        const labelW = labelText.length * charW + 8
+        const labelH = display.fontSize + 6
+        return (
+          <g key={i}>
+            {display.boxes && (
+              <rect
+                x={x1} y={y1}
+                width={x2 - x1} height={y2 - y1}
+                stroke={color} fill={`${color}18`} strokeWidth={1.5}
+              />
+            )}
+            {display.labels && labelText && (
+              <>
+                <rect
+                  x={x1}
+                  y={Math.max(0, y1 - labelH)}
+                  width={labelW}
+                  height={labelH}
+                  fill={color}
+                  rx={2}
+                />
+                <text
+                  x={x1 + 4}
+                  y={Math.max(display.fontSize, y1 - 3)}
+                  fill="white"
+                  fontSize={display.fontSize}
+                  fontFamily="ui-monospace, monospace"
+                  fontWeight="600"
+                >
+                  {labelText}
+                </text>
+              </>
+            )}
+          </g>
+        )
+      })}
+    </svg>
   )
 }
 

@@ -23,5 +23,9 @@ class OverlayNode(BaseNode):
             show_labels=config.get("show_labels", True),
             show_confidence=config.get("show_confidence", True),
             show_tracker_id=config.get("show_tracker_id", True),
+            box_style=config.get("box_style", "box"),
+            box_thickness=int(config.get("box_thickness", 2)),
+            show_mask=config.get("show_mask", False),
+            label_position=config.get("label_position", "top_left"),
         )
         return {}

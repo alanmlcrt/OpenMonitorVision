@@ -210,6 +210,127 @@ Config :
 }
 ```
 
+## Nodes conditionnels avances
+
+Ces nodes permettent de couvrir des scenarios du type : "si une voiture verte
+passe en Zone 1 puis en Zone 2, enregistrer l'evenement".
+
+### Color Filter Node
+
+Filtre les detections selon la couleur dominante dans le crop de la bounding box.
+
+Config :
+
+```json
+{
+  "target_color": "green",
+  "min_color_ratio": 0.12,
+  "min_saturation": 40,
+  "min_value": 40,
+  "bbox_padding_px": 0
+}
+```
+
+Le node ajoute aussi des metadonnees JSON propres aux detections conservees :
+
+```json
+{
+  "color_name": "green",
+  "color_ratio": 0.42
+}
+```
+
+### Zone Sequence Trigger Node
+
+Declenche un event quand un meme objet tracke visite plusieurs zones dans
+l'ordre configure. Il necessite un `Tracker` en amont.
+
+Config :
+
+```json
+{
+  "zones": [
+    { "name": "Zone 1", "points": [[0, 0], [200, 0], [200, 200], [0, 200]] },
+    { "name": "Zone 2", "points": [[300, 0], [500, 0], [500, 200], [300, 200]] }
+  ],
+  "sequence": ["Zone 1", "Zone 2"],
+  "max_seconds_between_zones": 30,
+  "cooldown_seconds": 0,
+  "trigger_once_per_object": true,
+  "anchor": "bottom_center"
+}
+```
+
+Workflow type :
+
+```text
+Source
+  -> YOLO Detection
+  -> Tracker
+  -> Class Filter (car)
+  -> Confidence Filter
+  -> Color Filter (green)
+  -> Zone Sequence Trigger (Zone 1 -> Zone 2)
+  -> Save Event
+  -> Overlay
+```
+
+## Nodes satellite / geospatiaux
+
+Ces nodes permettent de traiter un flux base sur des images satellite ou des
+items STAC, avec une logique de zone geographique plutot qu'une zone image.
+
+### Satellite Scene Node
+
+Charge une scene satellite deja enregistree en base et expose ses metadonnees
+dans le contexte du workflow.
+
+Config :
+
+```json
+{
+  "scene_id": 1
+}
+```
+
+Le node ajoute notamment `satellite_scene` dans les metadonnees du contexte,
+avec l'identifiant externe, la mission, la date d'acquisition, le bbox, le
+footprint, les assets et les metadonnees fournisseur.
+
+### Geo Zone Trigger Node
+
+Declenche un evenement si la scene satellite intersecte une ou plusieurs zones
+geographiques configurees.
+
+Config :
+
+```json
+{
+  "areas": [
+    {
+      "id": 1,
+      "name": "Port",
+      "bbox": [2.20, 48.80, 2.45, 48.95]
+    }
+  ],
+  "max_cloud_cover": 35,
+  "event_class": "satellite_scene"
+}
+```
+
+Workflow type :
+
+```text
+Satellite Scene
+  -> Geo Zone Trigger
+  -> Save Event
+```
+
+Ce scenario complete le monitoring video : il permet de surveiller des zones
+geographiques a partir de scenes STAC / satellite et d'enregistrer les
+evenements geolocalises dans la meme table d'evenements que le reste de la
+plateforme.
+
 ## Règles
 
 * Un node fait une seule chose.

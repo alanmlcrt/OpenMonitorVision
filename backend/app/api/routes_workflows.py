@@ -49,6 +49,35 @@ async def delete_workflow(workflow_id: int, db: AsyncSession = Depends(get_db)):
         raise HTTPException(404, "Workflow not found")
 
 
+@router.get("/{workflow_id}/export")
+async def export_workflow(workflow_id: int, db: AsyncSession = Depends(get_db)):
+    """Return a portable JSON blob containing the workflow's graph (no DB id)."""
+    wf = await workflow_service.get_workflow(db, workflow_id)
+    if not wf:
+        raise HTTPException(404, "Workflow not found")
+    return {
+        "version": 1,
+        "name": wf.name,
+        "nodes": wf.nodes or [],
+        "edges": wf.edges or [],
+        "exported_at": wf.updated_at.isoformat() if wf.updated_at else None,
+    }
+
+
+@router.post("/import", response_model=WorkflowRead, status_code=201)
+async def import_workflow(payload: dict, db: AsyncSession = Depends(get_db)):
+    """Create a workflow from an exported JSON blob (replaces conflicting names)."""
+    name = (payload.get("name") or "Imported workflow").strip()
+    nodes = payload.get("nodes") or []
+    edges = payload.get("edges") or []
+    if not isinstance(nodes, list) or not isinstance(edges, list):
+        raise HTTPException(400, "Invalid payload: nodes / edges must be lists")
+    return await workflow_service.create_workflow(
+        db,
+        WorkflowCreate(name=name, nodes=nodes, edges=edges),
+    )
+
+
 @router.post("/{workflow_id}/start")
 async def start_workflow(workflow_id: int, db: AsyncSession = Depends(get_db)):
     wf = await workflow_service.get_workflow(db, workflow_id)
@@ -88,6 +117,15 @@ async def stop_workflow(workflow_id: int, db: AsyncSession = Depends(get_db)):
     return {"status": "stopped"}
 
 
+@router.get("/running-ids")
+async def running_workflow_ids():
+    """Return the IDs of all currently-running workflows."""
+    return {"ids": list(stream_manager.all_running_stats().keys())}
+
+
 @router.get("/{workflow_id}/status")
 async def workflow_status(workflow_id: int):
-    return {"running": stream_manager.is_running(workflow_id)}
+    return {
+        "running": stream_manager.is_running(workflow_id),
+        "stats": stream_manager.get_stream_stats(workflow_id),
+    }

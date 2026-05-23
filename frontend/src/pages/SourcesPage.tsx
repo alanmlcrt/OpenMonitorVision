@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { Fragment, useEffect, useState } from 'react'
 import { sourcesApi } from '../api/sources'
 import type { Source, SourceType } from '../types'
 import { Card } from '../components/ui/Card'
@@ -29,30 +29,39 @@ function buildIpCameraUri(ip: IpCamForm): string {
 }
 
 const sourceTypeLabel: Record<SourceType, string> = {
-  webcam:    'Webcam',
-  video:     'Video file',
-  rtsp:      'RTSP stream',
-  image:     'Image',
-  stream:    'Web stream',
-  ip_camera: 'IP Camera',
+  webcam:       'Webcam',
+  video:        'Video file',
+  rtsp:         'RTSP stream',
+  image:        'Image',
+  stream:       'Web stream',
+  ip_camera:    'IP Camera',
+  image_url:    'Image URL (snapshot)',
+  image_folder: 'Image folder (sequence)',
+  satellite:    'Satellite metadata',
 }
 
 const uriPlaceholder: Record<SourceType, string> = {
-  webcam:    '0',
-  video:     '/path/to/video.mp4',
-  rtsp:      'rtsp://user:pass@192.168.1.1/stream',
-  image:     '/path/to/image.jpg',
-  stream:    'https://www.youtube.com/watch?v=… or https://twitch.tv/channel',
-  ip_camera: 'http://192.168.1.100:8080/video',
+  webcam:       '0',
+  video:        '/path/to/video.mp4',
+  rtsp:         'rtsp://user:pass@192.168.1.1/stream',
+  image:        '/path/to/image.jpg',
+  stream:       'https://www.youtube.com/watch?v=… or https://twitch.tv/channel',
+  ip_camera:    'http://192.168.1.100:8080/video',
+  image_url:    'https://camera.example.com/snapshot.jpg',
+  image_folder: '/path/to/folder/of/images',
+  satellite:    'satellite://metadata',
 }
 
 const uriDefaultOnTypeChange: Record<SourceType, string> = {
-  webcam:    '0',
-  video:     '',
-  rtsp:      '',
-  image:     '',
-  stream:    '',
-  ip_camera: '',
+  webcam:       '0',
+  video:        '',
+  rtsp:         '',
+  image:        '',
+  stream:       '',
+  ip_camera:    '',
+  image_url:    '',
+  image_folder: '',
+  satellite:    'satellite://metadata',
 }
 
 // ── Platform detection ───────────────────────────────────────────────────────
@@ -259,12 +268,29 @@ export function SourcesPage() {
             ) : (
               <div className="col-span-2 space-y-1.5">
                 <Input
-                  label={form.type === 'webcam' ? 'Device index' : form.type === 'stream' ? 'Stream URL' : 'URI / path'}
+                  label={
+                    form.type === 'webcam'        ? 'Device index'
+                    : form.type === 'stream'      ? 'Stream URL'
+                    : form.type === 'image_url'   ? 'Snapshot URL'
+                    : form.type === 'image_folder' ? 'Folder path'
+                    : 'URI / path'
+                  }
                   value={form.uri}
                   onChange={(e) => setForm({ ...form, uri: e.target.value })}
                   placeholder={uriPlaceholder[form.type]}
                   className="font-mono"
                 />
+
+                {form.type === 'image_url' && (
+                  <p className="text-2xs text-text-tertiary">
+                    URL that returns a JPEG/PNG on each GET — typical of old IP cameras or public webcam snapshots. Polled at the workflow FPS.
+                  </p>
+                )}
+                {form.type === 'image_folder' && (
+                  <p className="text-2xs text-text-tertiary">
+                    Absolute path to a directory of images. Cycled in lexicographic order, looping. Useful for replaying captured datasets through a workflow.
+                  </p>
+                )}
 
                 {/* Platform detection badge + hints for stream type */}
                 {form.type === 'stream' && (
@@ -344,9 +370,8 @@ export function SourcesPage() {
               {sources.map((s, i) => {
                 const platform = s.type === 'stream' ? detectPlatform(s.uri) : null
                 return (
-                  <>
+                  <Fragment key={s.id}>
                     <tr
-                      key={s.id}
                       className={i < sources.length - 1 ? 'border-b border-border-subtle' : ''}
                     >
                       <td className="px-5 py-3 text-sm text-text-primary font-medium">{s.name}</td>
@@ -402,7 +427,7 @@ export function SourcesPage() {
                         </td>
                       </tr>
                     )}
-                  </>
+                  </Fragment>
                 )
               })}
             </tbody>

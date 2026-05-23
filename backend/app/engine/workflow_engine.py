@@ -43,12 +43,15 @@ async def run_workflow(
     sorted_nodes = _sort_nodes(nodes, edges)
 
     for node_def in sorted_nodes:
+        if context.halted:
+            break
         node_type = node_def.get("data", {}).get("type") or node_def.get("type")
         config = node_def.get("data", {}).get("config", node_def.get("config", {}))
         node = get_node(node_type)
         if node is None:
             logger.warning(f"Unknown node type: {node_type}")
             continue
+        context.current_node_id = node_def.get("id")
         try:
             await node.run(context, {"config": config})
         except Exception as e:

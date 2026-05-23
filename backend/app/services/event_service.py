@@ -22,6 +22,9 @@ async def list_events(
     source_id: int | None = None,
     workflow_id: int | None = None,
     class_name: str | None = None,
+    min_confidence: float | None = None,
+    since: datetime | None = None,
+    until: datetime | None = None,
 ) -> list[Event]:
     q = select(Event).order_by(Event.timestamp.desc())
     if source_id is not None:
@@ -30,6 +33,12 @@ async def list_events(
         q = q.where(Event.workflow_id == workflow_id)
     if class_name:
         q = q.where(Event.class_name == class_name)
+    if min_confidence is not None:
+        q = q.where(Event.confidence >= min_confidence)
+    if since is not None:
+        q = q.where(Event.timestamp >= since)
+    if until is not None:
+        q = q.where(Event.timestamp <= until)
     q = q.offset(offset).limit(limit)
     result = await db.execute(q)
     return result.scalars().all()

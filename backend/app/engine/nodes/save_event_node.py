@@ -10,6 +10,15 @@ from app.core.logging import get_logger
 
 logger = get_logger(__name__)
 
+_CORE_EVENT_KEYS = {
+    "class_name",
+    "class_id",
+    "confidence",
+    "tracker_id",
+    "zone_name",
+    "bbox",
+}
+
 
 def _cv2():
     try:
@@ -26,11 +35,34 @@ def _write_frame(path: str, frame) -> None:
 def _resolve_column_value(expr: str, det: dict) -> str:
     """Substitute {variable} placeholders in a column value expression."""
     value = str(expr)
-    value = value.replace("{class_name}", str(det.get("class_name") or ""))
-    value = value.replace("{confidence}", str(round(float(det.get("confidence") or 0), 4)))
-    value = value.replace("{tracker_id}", str(det.get("tracker_id") or ""))
-    value = value.replace("{zone_name}", str(det.get("zone_name") or ""))
+    for key, raw in det.items():
+        if isinstance(raw, float):
+            replacement = str(round(raw, 4))
+        else:
+            replacement = str(raw if raw is not None else "")
+        value = value.replace(f"{{{key}}}", replacement)
     return value
+
+
+def _metadata_value(value):
+    if isinstance(value, (str, int, float, bool)) or value is None:
+        return value
+    if isinstance(value, list):
+        return [_metadata_value(item) for item in value]
+    if isinstance(value, tuple):
+        return [_metadata_value(item) for item in value]
+    if isinstance(value, dict):
+        return {str(key): _metadata_value(item) for key, item in value.items()}
+    return str(value)
+
+
+def _event_metadata(det: dict) -> dict | None:
+    metadata = {
+        key: _metadata_value(value)
+        for key, value in det.items()
+        if key not in _CORE_EVENT_KEYS
+    }
+    return metadata or None
 
 
 class SaveEventNode(BaseNode):
@@ -39,6 +71,7 @@ class SaveEventNode(BaseNode):
     async def run(self, context: WorkflowContext, input_data: dict) -> dict:
         config = input_data.get("config", {})
         save_frame = config.get("save_frame", False)
+        save_metadata = config.get("save_metadata", True)
         custom_columns: list[dict] = config.get("custom_columns") or []
 
         if not context.events:
@@ -58,10 +91,9 @@ class SaveEventNode(BaseNode):
 
         async with AsyncSessionLocal() as db:
             for det in context.events:
-                # Build metadata from custom columns
-                metadata = None
+                metadata = _event_metadata(det) if save_metadata else None
                 if custom_columns:
-                    metadata = {}
+                    metadata = metadata or {}
                     for col in custom_columns:
                         name = (col.get("name") or "").strip()
                         if not name:

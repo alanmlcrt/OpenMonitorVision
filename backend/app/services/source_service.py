@@ -97,6 +97,14 @@ def _open_capture(source: Source) -> Any | None:
             cap.set(cv2.CAP_PROP_READ_TIMEOUT_MSEC, RTSP_READ_TIMEOUT_MS)
         else:
             cap = cv2.VideoCapture(uri)
+    elif source.type == "image_url":
+        from app.runtime.captures import HttpPollCapture
+        cap = HttpPollCapture(uri)
+        return cap if cap.isOpened() else None
+    elif source.type == "image_folder":
+        from app.runtime.captures import ImageFolderCapture
+        cap = ImageFolderCapture(uri)
+        return cap if cap.isOpened() else None
     else:
         cap = cv2.VideoCapture(uri)
     if not cap.isOpened():
@@ -147,7 +155,10 @@ def test_source(source: Source) -> dict:
         if frame is None:
             return {"ok": False, "error": "Cannot read frame"}
         h, w = frame.shape[:2]
-        fps = cap.get(cv2.CAP_PROP_FPS) or None
+        # cv2 isn't imported at module scope (lazy via _cv2()); custom captures
+        # also expose .get() and return 0 for unknown — either way ints work.
+        CAP_PROP_FPS = 5  # OpenCV constant value
+        fps = cap.get(CAP_PROP_FPS) or None
         return {
             "ok": True,
             "width": w,

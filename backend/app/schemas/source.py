@@ -9,8 +9,11 @@ class SourceType(str, Enum):
     video = "video"
     rtsp = "rtsp"
     image = "image"
-    stream = "stream"       # any web stream resolved via yt-dlp (YouTube, Twitch, …)
-    ip_camera = "ip_camera"  # HTTP MJPEG or RTSP camera with builder UI
+    stream = "stream"            # any web stream resolved via yt-dlp (YouTube, Twitch, …)
+    ip_camera = "ip_camera"      # HTTP MJPEG or RTSP camera with builder UI
+    image_url = "image_url"      # periodic HTTP JPEG/PNG snapshot poll
+    image_folder = "image_folder"  # directory of images cycled as a stream
+    satellite = "satellite"      # logical satellite monitoring source (metadata-first)
 
 
 class SourceCreate(BaseModel):

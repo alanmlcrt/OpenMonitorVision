@@ -8,6 +8,8 @@ for directory in (
     settings.models_dir,
     settings.uploads_dir,
     settings.exports_dir,
+    settings.datasets_dir,
+    settings.training_runs_dir,
     settings.ultralytics_config_dir,
 ):
     os.makedirs(directory, exist_ok=True)

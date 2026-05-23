@@ -17,6 +17,8 @@ class Settings(BaseSettings):
     models_dir: str = str(DATA_DIR / "models")
     uploads_dir: str = str(DATA_DIR / "uploads")
     exports_dir: str = str(DATA_DIR / "exports")
+    datasets_dir: str = str(DATA_DIR / "datasets")
+    training_runs_dir: str = str(DATA_DIR / "training_runs")
     ultralytics_config_dir: str = str(DATA_DIR / "ultralytics")
 
     max_fps: int = 15

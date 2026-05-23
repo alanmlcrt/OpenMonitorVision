@@ -7,7 +7,10 @@
       "Bash(.venv/Scripts/python -m pytest tests/ -v --tb=short)",
       "Bash(rtk uv *)",
       "Bash(VIRTUAL_ENV=\"$\\(pwd\\)/.venv\" rtk uv pip install -r requirements-test.txt)",
-      "Bash(rtk grep *)"
+      "Bash(rtk grep *)",
+      "Bash(python -m py_compile app/services/training_service.py app/api/routes_training.py)",
+      "mcp__Claude_Preview__preview_start",
+      "Bash(rtk find *)"
     ]
   }
 }

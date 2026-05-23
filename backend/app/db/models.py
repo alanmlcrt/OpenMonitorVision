@@ -56,6 +56,93 @@ class Zone(Base):
     created_at = Column(DateTime, default=_utcnow)
 
 
+class SatelliteArea(Base):
+    __tablename__ = "satellite_areas"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, nullable=False)
+    description = Column(Text, nullable=True)
+    geojson = Column(JSON, nullable=False)
+    bbox = Column(JSON, nullable=False)  # [min_lon, min_lat, max_lon, max_lat]
+    enabled = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=_utcnow)
+
+    scenes = relationship("SatelliteScene", back_populates="area")
+
+
+class SatelliteScene(Base):
+    __tablename__ = "satellite_scenes"
+
+    id = Column(Integer, primary_key=True, index=True)
+    external_id = Column(String, nullable=False, index=True)
+    provider = Column(String, default="manual")
+    mission = Column(String, nullable=True)
+    product_type = Column(String, nullable=True)
+    acquired_at = Column(DateTime, nullable=True, index=True)
+    cloud_cover = Column(Float, nullable=True)
+    bbox = Column(JSON, nullable=False)  # [min_lon, min_lat, max_lon, max_lat]
+    footprint = Column(JSON, nullable=False)
+    assets = Column(JSON, default=dict)
+    metadata_ = Column("metadata", JSON, nullable=True)
+    local_path = Column(String, nullable=True)
+    thumbnail_url = Column(String, nullable=True)
+    source_url = Column(String, nullable=True)
+    area_id = Column(Integer, ForeignKey("satellite_areas.id"), nullable=True)
+    status = Column(String, default="available")
+    created_at = Column(DateTime, default=_utcnow)
+
+    area = relationship("SatelliteArea", back_populates="scenes")
+
+
+class MqttBroker(Base):
+    __tablename__ = "mqtt_brokers"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, nullable=False)
+    host = Column(String, nullable=False)
+    port = Column(Integer, default=1883)
+    username = Column(String, nullable=True)
+    password = Column(String, nullable=True)
+    use_tls = Column(Boolean, default=False)
+    client_id = Column(String, nullable=True)        # auto-generated if empty
+    keepalive = Column(Integer, default=60)
+    created_at = Column(DateTime, default=_utcnow)
+
+
+class Dataset(Base):
+    __tablename__ = "datasets"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, nullable=False)
+    path = Column(String, nullable=False)            # data/datasets/<id>/
+    yaml_path = Column(String, nullable=False)       # path/data.yaml
+    classes = Column(JSON, default=list)             # ["person", "car", ...]
+    num_images = Column(Integer, default=0)
+    num_train = Column(Integer, default=0)
+    num_val = Column(Integer, default=0)
+    created_at = Column(DateTime, default=_utcnow)
+
+
+class TrainingJob(Base):
+    __tablename__ = "training_jobs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, nullable=False)
+    dataset_id = Column(Integer, ForeignKey("datasets.id"), nullable=True)
+    base_model = Column(String, nullable=False)       # "yolov8n.pt", ...
+    config = Column(JSON, default=dict)               # {epochs, imgsz, batch, lr0, device}
+    status = Column(String, default="queued", index=True)  # queued|running|completed|failed|cancelled
+    progress = Column(JSON, default=dict)             # {epoch, total_epochs, metrics: {...}}
+    metrics = Column(JSON, default=list)              # history [{epoch, box_loss, map50, ...}]
+    output_path = Column(String, nullable=True)
+    weights_path = Column(String, nullable=True)
+    model_id = Column(Integer, ForeignKey("yolo_models.id"), nullable=True)
+    error = Column(Text, nullable=True)
+    started_at = Column(DateTime, nullable=True)
+    finished_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=_utcnow)
+
+
 class Event(Base):
     __tablename__ = "events"
 

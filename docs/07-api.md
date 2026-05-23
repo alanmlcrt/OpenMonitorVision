@@ -1,131 +1,191 @@
 # 07 — API REST et WebSocket
 
-## API REST
+Cette page décrit le contrat API actuellement exposé par le backend FastAPI.
 
-### Sources
+Base URL locale :
 
+```text
+http://127.0.0.1:8000/api
 ```
+
+Documentation interactive :
+
+```text
+http://127.0.0.1:8000/docs
+```
+
+## Health
+
+```text
+GET /api/health
+```
+
+Réponse attendue :
+
+- statut applicatif ;
+- device d'inférence (`cpu` ou `cuda`) ;
+- workflows en cours et statistiques runtime ;
+- job training courant si présent.
+
+## Sources
+
+```text
 GET    /api/sources
 POST   /api/sources
-GET    /api/sources/{id}
-PUT    /api/sources/{id}
-DELETE /api/sources/{id}
-POST   /api/sources/{id}/test
+GET    /api/sources/{source_id}
+PATCH  /api/sources/{source_id}
+DELETE /api/sources/{source_id}
+GET    /api/sources/{source_id}/test
+GET    /api/sources/{source_id}/preview
 ```
 
-### Workflows
+Types supportés :
 
-```
+- `webcam`
+- `video`
+- `rtsp`
+- `image`
+- `stream`
+- `ip_camera`
+- `image_url`
+- `image_folder`
+
+## Workflows
+
+```text
 GET    /api/workflows
 POST   /api/workflows
-GET    /api/workflows/{id}
-PUT    /api/workflows/{id}
-DELETE /api/workflows/{id}
-POST   /api/workflows/{id}/validate
-POST   /api/workflows/{id}/start
-POST   /api/workflows/{id}/stop
+POST   /api/workflows/validate
+GET    /api/workflows/{workflow_id}
+PATCH  /api/workflows/{workflow_id}
+DELETE /api/workflows/{workflow_id}
+GET    /api/workflows/{workflow_id}/export
+POST   /api/workflows/import
+POST   /api/workflows/{workflow_id}/start
+POST   /api/workflows/{workflow_id}/stop
+GET    /api/workflows/{workflow_id}/status
 ```
 
-### Events
+Le endpoint `status` renvoie `running` et les stats runtime connues (`source_id`, `started_at`, `frames_total`, `last_frame_at`, `fps_smoothed`).
 
-```
+## Events
+
+```text
 GET    /api/events
-GET    /api/events/{id}
-GET    /api/events/stats/summary
-GET    /api/events/stats/by-class
-GET    /api/events/stats/by-source
-GET    /api/events/stats/timeline
-GET    /api/events/export.csv
+GET    /api/events/stats
+DELETE /api/events
+POST   /api/events/cleanup-frames
+GET    /api/events/{event_id}
+GET    /api/events/{event_id}/frame
+DELETE /api/events/{event_id}
 ```
 
-### Models
+Filtres de liste supportés :
 
-```
+- `source_id`
+- `workflow_id`
+- `class_name`
+- `min_confidence`
+- `since`
+- `until`
+- `limit`
+- `offset`
+
+## Models
+
+```text
 GET    /api/models
 POST   /api/models
-GET    /api/models/{id}
-DELETE /api/models/{id}
-POST   /api/models/{id}/test
+DELETE /api/models/{model_id}
+GET    /api/models/default
 ```
 
-### Zones
+Les uploads de modèles sont limités aux extensions `.pt` et `.onnx`. Les chemins et noms de fichiers sont normalisés côté backend.
 
+## Datasets
+
+```text
+GET    /api/datasets
+POST   /api/datasets
+POST   /api/datasets/from-source
+POST   /api/datasets/from-folder
+GET    /api/datasets/{dataset_id}
+GET    /api/datasets/{dataset_id}/validate
+DELETE /api/datasets/{dataset_id}
+GET    /api/datasets/{dataset_id}/images
+GET    /api/datasets/{dataset_id}/image
+GET    /api/datasets/{dataset_id}/label
+PUT    /api/datasets/{dataset_id}/label
 ```
-GET    /api/sources/{source_id}/zones
-POST   /api/sources/{source_id}/zones
-PUT    /api/zones/{id}
-DELETE /api/zones/{id}
+
+Les endpoints d'image/label refusent les stems avec chemin ou traversal. La suppression d'un dataset ne supprime un dossier que s'il reste sous `settings.datasets_dir`.
+
+## Training
+
+```text
+GET    /api/training/base-models
+GET    /api/training/user-models
+GET    /api/training/device-info
+GET    /api/training
+POST   /api/training
+GET    /api/training/{job_id}
+GET    /api/training/{job_id}/log
+POST   /api/training/{job_id}/cancel
+DELETE /api/training/{job_id}
+POST   /api/training/{job_id}/export
+GET    /api/training/{job_id}/export/download
 ```
+
+Le training est une fonctionnalité hors MVP de supervision. Il doit rester secondaire tant que le scénario live/events/stats n'est pas stable.
+
+## MQTT
+
+```text
+GET    /api/mqtt/brokers
+POST   /api/mqtt/brokers
+GET    /api/mqtt/brokers/{broker_id}
+PATCH  /api/mqtt/brokers/{broker_id}
+DELETE /api/mqtt/brokers/{broker_id}
+POST   /api/mqtt/brokers/{broker_id}/test
+```
+
+Le cache client MQTT est invalidé après update/delete d'un broker.
 
 ## WebSockets
 
-Canaux proposés :
-
-```
-/ws/live/{source_id}
-/ws/events
-/ws/workflows/{workflow_id}/status
+```text
+WS /ws/workflow/{workflow_id}
+WS /ws/training/{job_id}
 ```
 
-## Message WebSocket frame
+Message frame workflow :
 
 ```json
 {
   "type": "frame",
-  "source_id": 1,
-  "timestamp": "2026-05-21T14:00:00Z",
-  "image_jpeg_base64": "...",
+  "frame": "...base64 jpeg...",
   "detections": [
     {
-      "class_name": "car",
+      "class_id": 0,
+      "class_name": "person",
       "confidence": 0.91,
-      "tracker_id": 12,
+      "tracker_id": 1,
       "bbox": {
-        "x1": 100,
-        "y1": 80,
-        "x2": 260,
-        "y2": 210
+        "x1": 100.0,
+        "y1": 80.0,
+        "x2": 260.0,
+        "y2": 210.0
       },
-      "zone": "parking"
+      "zone_name": null
     }
-  ]
-}
-```
-
-## Message WebSocket event
-
-```json
-{
-  "type": "event",
-  "event": {
-    "id": 42,
-    "timestamp": "2026-05-21T14:00:00Z",
-    "source_id": 1,
-    "workflow_id": 3,
-    "class_name": "car",
-    "confidence": 0.91,
-    "tracker_id": 12,
-    "zone_name": "parking"
-  }
-}
-```
-
-## Message WebSocket workflow status
-
-```json
-{
-  "type": "workflow_status",
-  "workflow_id": 3,
-  "status": "running",
-  "fps": 12.4,
-  "last_error": null
+  ],
+  "events": []
 }
 ```
 
 ## Règles API
 
-* Les routes doivent utiliser des schémas Pydantic.
-* Ne pas retourner des objets SQLAlchemy bruts.
-* Ne pas retourner des objets Supervision bruts.
-* Les erreurs doivent être explicites.
-* Les endpoints doivent être simples à tester.
+- Les routes retournent des schémas Pydantic ou des types JSON simples.
+- Ne jamais exposer directement des objets OpenCV, Ultralytics, Supervision ou SQLAlchemy.
+- Les endpoints fichiers doivent borner les chemins sous les dossiers `backend/data/*` prévus.
+- Les erreurs doivent être explicites et testables.

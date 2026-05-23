@@ -25,14 +25,26 @@ class EventTriggerNode(BaseNode):
 
         now = time.time()
         detections = detections_to_json(context.detections, context.class_names)
+
+        if not once_per_object:
+            key = f"wf_{context.workflow_id}:global"
+            last = _cooldown_state.get(key, 0)
+            if now - last >= cooldown:
+                _cooldown_state[key] = now
+                context.events = detections
+            else:
+                context.events = []
+            return {}
+
         events = []
 
         for index, detection in enumerate(detections):
             tracker_id = detection.get("tracker_id")
-            object_key = tracker_id if tracker_id is not None else f"det_{index}"
-            key = f"wf_{context.workflow_id}:{object_key if once_per_object else 'global'}"
+            has_tracker = tracker_id is not None
+            object_key = f"track_{tracker_id}" if has_tracker else f"untracked_{index}"
+            key = f"wf_{context.workflow_id}:{object_key}"
             last = _cooldown_state.get(key, 0)
-            if once_per_object and last:
+            if has_tracker and last:
                 continue
             if now - last < cooldown:
                 continue

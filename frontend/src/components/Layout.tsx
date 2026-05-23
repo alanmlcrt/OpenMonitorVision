@@ -1,5 +1,7 @@
+import { useEffect, useState } from 'react'
 import { NavLink } from 'react-router-dom'
 import clsx from 'clsx'
+import { workflowsApi } from '../api/workflows'
 
 const nav = [
   { to: '/',          label: 'Overview',   end: true  },
@@ -7,10 +9,22 @@ const nav = [
   { to: '/workflows', label: 'Workflows',  end: false },
   { to: '/live',      label: 'Live',       end: false },
   { to: '/events',    label: 'Events',     end: false },
+  { to: '/satellite', label: 'Satellite',  end: false },
   { to: '/models',    label: 'Models',     end: false },
+  { to: '/training',  label: 'Training',   end: false },
 ]
 
 export function Layout({ children }: { children: React.ReactNode }) {
+  const [anyRunning, setAnyRunning] = useState(false)
+
+  useEffect(() => {
+    const poll = () =>
+      workflowsApi.runningIds().then((r) => setAnyRunning(r.ids.length > 0)).catch(() => {})
+    poll()
+    const id = setInterval(poll, 5000)
+    return () => clearInterval(id)
+  }, [])
+
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-bg-base">
       <aside className="w-52 flex-shrink-0 flex flex-col border-r border-border-subtle">
@@ -45,7 +59,13 @@ export function Layout({ children }: { children: React.ReactNode }) {
                 )
               }
             >
-              {item.label}
+              <span className="flex-1">{item.label}</span>
+              {item.to === '/workflows' && anyRunning && (
+                <span className="relative flex h-1.5 w-1.5">
+                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-success opacity-75" />
+                  <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-success" />
+                </span>
+              )}
             </NavLink>
           ))}
         </nav>

@@ -54,7 +54,32 @@ def test_workflow_status(client):
     wf_id = _create(client).json()["id"]
     r = client.get(f"/api/workflows/{wf_id}/status")
     assert r.status_code == 200
-    assert r.json()["running"] is False
+    data = r.json()
+    assert data["running"] is False
+    assert "stats" in data
+
+
+def test_workflow_export_import(client):
+    payload = {
+        "name": "Exportable",
+        "nodes": [{"id": "src", "data": {"type": "source", "config": {"source_id": 1}}}],
+        "edges": [],
+    }
+    wf_id = _create(client, payload).json()["id"]
+
+    exported = client.get(f"/api/workflows/{wf_id}/export")
+    assert exported.status_code == 200
+    blob = exported.json()
+    assert blob["name"] == "Exportable"
+    assert blob["nodes"] == payload["nodes"]
+    assert "id" not in blob
+
+    blob["name"] = "Imported copy"
+    imported = client.post("/api/workflows/import", json=blob)
+    assert imported.status_code == 201
+    data = imported.json()
+    assert data["name"] == "Imported copy"
+    assert data["nodes"] == payload["nodes"]
 
 
 # ── Validation ────────────────────────────────────────────────────────────────

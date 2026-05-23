@@ -12,6 +12,19 @@ logger = get_logger(__name__)
 
 _running_tasks: dict[int, asyncio.Task] = {}
 
+# Per-workflow runtime stats, refreshed each frame in the stream loop
+_stream_stats: dict[int, dict] = {}
+
+
+def get_stream_stats(workflow_id: int) -> dict | None:
+    """Return last-known stats for a workflow, or None if it's not running."""
+    return _stream_stats.get(workflow_id)
+
+
+def all_running_stats() -> dict[int, dict]:
+    """Snapshot of stats for every currently-tracked workflow."""
+    return dict(_stream_stats)
+
 
 def _cv2():
     try:
@@ -58,6 +71,14 @@ def _open_capture(source, force_resolve: bool = False) -> Any | None:
             cap.set(cv2.CAP_PROP_READ_TIMEOUT_MSEC, 8000)
         else:
             cap = cv2.VideoCapture(uri)
+    elif source.type == "image_url":
+        from app.runtime.captures import HttpPollCapture
+        cap = HttpPollCapture(uri)
+        return cap if cap.isOpened() else None
+    elif source.type == "image_folder":
+        from app.runtime.captures import ImageFolderCapture
+        cap = ImageFolderCapture(uri)
+        return cap if cap.isOpened() else None
     else:
         cap = cv2.VideoCapture(uri)
     return cap if cap.isOpened() else None
@@ -98,6 +119,14 @@ async def _stream_loop(workflow_id: int, workflow, source) -> None:
     target_interval = 1.0 / settings.max_fps
     logger.info(f"Stream started: workflow={workflow_id}, source={source.id}")
 
+    _stream_stats[workflow_id] = {
+        "source_id": source.id,
+        "started_at": time.time(),
+        "frames_total": 0,
+        "last_frame_at": None,
+        "fps_smoothed": 0.0,
+    }
+
     # For 'stream' sources: track consecutive read failures to know when to
     # force-re-resolve the URL (YouTube/Twitch URLs expire after a few hours).
     consecutive_failures = 0
@@ -106,10 +135,6 @@ async def _stream_loop(workflow_id: int, workflow, source) -> None:
     try:
         while True:
             t0 = time.monotonic()
-
-            if ws_manager.channel_count(channel) == 0:
-                await asyncio.sleep(0.5)
-                continue
 
             ret, frame = await asyncio.to_thread(_read_frame, cap)
             if not ret:
@@ -157,23 +182,38 @@ async def _stream_loop(workflow_id: int, workflow, source) -> None:
                 source_id=source.id,
             )
 
-            display_frame = ctx.annotated_frame if ctx.annotated_frame is not None else frame
-            b64 = await asyncio.to_thread(
-                _encode_frame_to_jpeg,
-                display_frame,
-                settings.jpeg_quality,
-            )
+            if ws_manager.channel_count(channel) > 0:
+                display_frame = ctx.annotated_frame if ctx.annotated_frame is not None else frame
+                b64 = await asyncio.to_thread(
+                    _encode_frame_to_jpeg,
+                    display_frame,
+                    settings.jpeg_quality,
+                )
 
-            from app.services.supervision_service import detections_to_json
+                from app.services.supervision_service import detections_to_json
 
-            detections = detections_to_json(ctx.detections, ctx.class_names) if ctx.detections is not None and len(ctx.detections) > 0 else []
+                detections = detections_to_json(ctx.detections, ctx.class_names) if ctx.detections is not None and len(ctx.detections) > 0 else []
 
-            await ws_manager.broadcast(channel, {
-                "type": "frame",
-                "frame": b64,
-                "detections": detections,
-                "events": ctx.events,
-            })
+                await ws_manager.broadcast(channel, {
+                    "type": "frame",
+                    "frame": b64,
+                    "detections": detections,
+                    "events": ctx.events,
+                })
+
+            # Update per-workflow runtime stats
+            stats = _stream_stats.get(workflow_id)
+            if stats is not None:
+                stats["frames_total"] += 1
+                stats["last_frame_at"] = time.time()
+                # Exponential-moving-average FPS over the last few frames
+                frame_dt = time.monotonic() - t0
+                if frame_dt > 0:
+                    inst = 1.0 / frame_dt
+                    stats["fps_smoothed"] = (
+                        inst if stats["fps_smoothed"] == 0
+                        else 0.85 * stats["fps_smoothed"] + 0.15 * inst
+                    )
 
             elapsed = time.monotonic() - t0
             sleep_time = max(0.0, target_interval - elapsed)
@@ -183,11 +223,32 @@ async def _stream_loop(workflow_id: int, workflow, source) -> None:
         logger.info(f"Stream stopped: workflow {workflow_id}")
     finally:
         await asyncio.to_thread(_release_capture, cap)
+        _stream_stats.pop(workflow_id, None)
+
+
+def _on_stream_done(workflow_id: int, task: asyncio.Task) -> None:
+    if _running_tasks.get(workflow_id) is task:
+        _running_tasks.pop(workflow_id, None)
+    _stream_stats.pop(workflow_id, None)
+    if task.cancelled():
+        return
+    try:
+        exc = task.exception()
+    except asyncio.CancelledError:
+        return
+    if exc is not None:
+        logger.error(
+            "Stream task crashed: workflow=%s error=%s",
+            workflow_id,
+            exc,
+            exc_info=(type(exc), exc, exc.__traceback__),
+        )
 
 
 async def start_stream(workflow_id: int, workflow, source) -> None:
     await stop_stream(workflow_id)
     task = asyncio.create_task(_stream_loop(workflow_id, workflow, source))
+    task.add_done_callback(lambda done: _on_stream_done(workflow_id, done))
     _running_tasks[workflow_id] = task
 
 
@@ -201,8 +262,17 @@ async def stop_stream(workflow_id: int) -> None:
             pass
     from app.services.supervision_service import reset_tracker
     from app.engine.nodes.event_trigger_node import reset_cooldown
+    from app.engine.nodes.harvest_node import reset as reset_harvest
+    from app.engine.nodes.schedule_trigger_node import reset as reset_schedule
+    from app.engine.nodes.line_crossing_node import reset as reset_line_crossing
+    from app.engine.nodes.zone_sequence_trigger_node import reset as reset_zone_sequence
     reset_tracker(f"workflow_{workflow_id}")
     reset_cooldown(workflow_id)
+    reset_harvest(workflow_id)
+    reset_schedule(workflow_id)
+    reset_line_crossing(workflow_id)
+    reset_zone_sequence(workflow_id)
+    _stream_stats.pop(workflow_id, None)
 
 
 def is_running(workflow_id: int) -> bool:

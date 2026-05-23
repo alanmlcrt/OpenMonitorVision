@@ -13,3 +13,5 @@ class WorkflowContext:
     events: list[dict] = field(default_factory=list)
     annotated_frame: np.ndarray | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
+    halted: bool = False
+    current_node_id: str | None = None

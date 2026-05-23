@@ -9,6 +9,8 @@ const WorkflowBuilderPage = lazy(() => import('./pages/WorkflowBuilderPage').the
 const LiveViewPage        = lazy(() => import('./pages/LiveViewPage').then(m => ({ default: m.LiveViewPage })))
 const EventsPage          = lazy(() => import('./pages/EventsPage').then(m => ({ default: m.EventsPage })))
 const ModelsPage          = lazy(() => import('./pages/ModelsPage').then(m => ({ default: m.ModelsPage })))
+const TrainingPage        = lazy(() => import('./pages/TrainingPage').then(m => ({ default: m.TrainingPage })))
+const SatellitePage       = lazy(() => import('./pages/SatellitePage').then(m => ({ default: m.SatellitePage })))
 
 function PageFallback() {
   return (
@@ -33,6 +35,8 @@ export default function App() {
             <Route path="/live" element={<LiveViewPage />} />
             <Route path="/events" element={<EventsPage />} />
             <Route path="/models" element={<ModelsPage />} />
+            <Route path="/training" element={<TrainingPage />} />
+            <Route path="/satellite" element={<SatellitePage />} />
           </Routes>
         </Suspense>
       </Layout>

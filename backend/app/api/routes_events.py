@@ -1,5 +1,8 @@
 import asyncio
+import os
+from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.database import get_db
 from app.schemas.event import EventRead, EventStats
@@ -16,9 +19,15 @@ async def list_events(
     source_id: int | None = None,
     workflow_id: int | None = None,
     class_name: str | None = None,
+    min_confidence: float | None = Query(None, ge=0, le=1),
+    since: datetime | None = None,
+    until: datetime | None = None,
     db: AsyncSession = Depends(get_db),
 ):
-    return await event_service.list_events(db, limit, offset, source_id, workflow_id, class_name)
+    return await event_service.list_events(
+        db, limit, offset, source_id, workflow_id, class_name,
+        min_confidence, since, until,
+    )
 
 
 @router.get("/stats", response_model=EventStats)
@@ -52,6 +61,17 @@ async def get_event(event_id: int, db: AsyncSession = Depends(get_db)):
     if not event:
         raise HTTPException(404, "Event not found")
     return event
+
+
+@router.get("/{event_id}/frame")
+async def get_event_frame(event_id: int, db: AsyncSession = Depends(get_db)):
+    """Serve the JPEG frame snapshot saved for this event (if any)."""
+    event = await event_service.get_event(db, event_id)
+    if not event:
+        raise HTTPException(404, "Event not found")
+    if not event.frame_path or not os.path.exists(event.frame_path):
+        raise HTTPException(404, "No frame snapshot saved for this event")
+    return FileResponse(event.frame_path, media_type="image/jpeg")
 
 
 @router.delete("/{event_id}", status_code=204)

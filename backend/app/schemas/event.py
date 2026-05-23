@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from datetime import datetime
 from typing import Optional, Any
 
@@ -22,8 +22,9 @@ class EventRead(BaseModel):
     zone_name: Optional[str] = None
     bbox: Optional[dict[str, Any]] = None
     frame_path: Optional[str] = None
+    metadata: Optional[dict[str, Any]] = Field(default=None, validation_alias="metadata_")
 
-    model_config = {"from_attributes": True}
+    model_config = {"from_attributes": True, "populate_by_name": True}
 
 
 class EventStats(BaseModel):
